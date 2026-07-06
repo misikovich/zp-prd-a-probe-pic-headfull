@@ -1,3 +1,4 @@
 {
-    "mplab.clangd.compileCommandsDir": "${workspaceFolder}/_build/zp-prd-a-probe-pic-headfull/default"
+    "mplab.clangd.compileCommandsDir": "${workspaceFolder}/_build/zp-prd-a-probe-pic-headfull/default",
+    "mplab.runcmake.provideRunCMakeBuildTasks": false
 }

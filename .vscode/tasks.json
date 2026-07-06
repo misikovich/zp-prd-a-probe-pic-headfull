@@ -1,0 +1,33 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "configure",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--preset",
+                "zp_prd_a_probe_pic_headfull_default_conf"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake/zp-prd-a-probe-pic-headfull/default"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "ninja",
+            "args": [
+                "-C",
+                "${workspaceFolder}/_build/zp-prd-a-probe-pic-headfull/default"
+            ],
+            "dependsOn": "configure",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}
