@@ -1,7 +1,7 @@
 {
     "mplab.clangd.compileCommandsDir": "${workspaceFolder}/_build/zp-prd-a-probe-pic-headfull/default",
     "mplab.runcmake.provideRunCMakeBuildTasks": false,
-    "cmake.sourceDirectory": "/Users/misikovich/Projects/zp-prd-a-probe-pic-headfull/cmake/zp-prd-a-probe-pic-headfull/default",
+    "cmake.sourceDirectory": "/home/ss1/Projects/zp-prd-a-probe-pic-headfull/cmake/zp-prd-a-probe-pic-headfull/default",
     "clangd.arguments": [
         "--query-driver=/Applications/microchip/xc16/**/bin/xc16-gcc"
     ]

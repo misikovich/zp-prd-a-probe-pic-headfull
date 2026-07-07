@@ -1,0 +1,40 @@
+#ifndef FPGA_H
+#define FPGA_H
+
+#include "utils.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
+/* SPI
+PIC - MASTER
+ICE5 - SLAVE
+*/
+static const GPIO ICE5_HW_CS  =   { &LATC, &PORTC, &TRISC, NULL, 1u << 9 };
+static const GPIO ICE5_HW_SCK =   { &LATG, &PORTG, &TRISG, NULL, 1u << 6 };
+static const GPIO ICE5_HW_MOSI =  { &LATG, &PORTG, &TRISG, NULL, 1u << 8 };
+static const GPIO ICE5_HW_MISO =  { &LATG, &PORTG, &TRISG, NULL, 1u << 7 };
+
+static const GPIO ICE5_HW_CDONE = { &LATA, &PORTA, &TRISA, NULL, 1u << 10};
+static const GPIO ICE5_HW_CRST =  { &LATD, &PORTD, &TRISD, NULL, 1u << 6 };
+static const GPIO ICE5_HW_RST =   { &LATC, &PORTC, &TRISC, NULL, 1u << 6 };
+
+/* 
+Send and forget
+Sent OK = CDONE HIGH
+*/
+#define FPGA_UPLOAD_STATUS_IDLE         0u
+#define FPGA_UPLOAD_STATUS_LOADING      1u
+#define FPGA_UPLOAD_STATUS_DONE         2u
+#define FPGA_UPLOAD_STATUS_PPS_FAILED   3u
+#define FPGA_UPLOAD_STATUS_STREAM_FAILED 4u
+#define FPGA_UPLOAD_STATUS_POST_FAILED  5u
+#define FPGA_UPLOAD_STATUS_CDONE_FAILED 6u
+
+void fpga_park(void);
+void fpga_prog_load(void);
+bool fpga_is_cdone(void);
+bool fpga_is_uploading(void);
+bool fpga_upload_failed(void);
+u8 fpga_upload_status(void);
+
+#endif // FPGA_H

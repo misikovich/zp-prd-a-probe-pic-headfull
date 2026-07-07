@@ -41,6 +41,7 @@
 #include "../../pwm/sccp4.h"
 #include "../../pwm/sccp5.h"
 #include "../../pwm/sccp6.h"
+#include "../../spi_host/spi1.h"
 #include "../../uart/uart1.h"
 #include "../../uart/uart2.h"
 #include "../interrupt.h"
@@ -57,6 +58,7 @@ void SYSTEM_Initialize(void)
     SCCP4_PWM_Initialize();
     SCCP5_PWM_Initialize();
     SCCP6_PWM_Initialize();
+    SPI1_Initialize();
     UART1_Initialize();
     UART2_Initialize();
     INTERRUPT_GlobalEnable();

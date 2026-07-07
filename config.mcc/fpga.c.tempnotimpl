@@ -1,0 +1,196 @@
+#include <libpic30.h>
+#include <stddef.h>
+#include <xc.h>
+#include "fpga.h"
+#include "fpga_bitstream.h"
+#include "project_clock.h"
+#include "spi2_bus.h"
+
+#define FPGA_SPI_HZ                  1000000UL
+#define FPGA_DELAY_CYCLES_PER_US     (PROJECT_FCY_HZ / 1000000UL)
+#define FPGA_CRESET_LOW_US           10u
+#define FPGA_CLEAR_WAIT_US           1200u
+#define FPGA_POST_CONFIG_BYTES       7u
+#define FPGA_CDONE_TIMEOUT_US        5000u
+#define FPGA_BITSTREAM_SYNC_OFFSET   81u
+
+static void fpga_delay_us(u16 us)
+{
+    while (us > 0u) {
+        __delay32(FPGA_DELAY_CYCLES_PER_US);
+        us--;
+    }
+}
+
+/* An unconfigured iCE5 with CRESET released and CS high enters SPI
+   *master* configuration mode and drives the shared SCK/data lines,
+   corrupting eMeter traffic. Park it in reset until a bitstream upload
+   actually runs. */
+void fpga_park(void)
+{
+    gpio_dw(&ICE5_HW_CS, 1u);
+    gpio_init_dw(&ICE5_HW_CS);
+
+    gpio_dw(&ICE5_HW_CRST, 0u);
+    gpio_init_dw(&ICE5_HW_CRST);
+}
+
+static void fpga_gpio_init(void)
+{
+    gpio_init_dw(&ICE5_HW_CS);
+    spi2_bus_gpio_init();
+    gpio_init_dr(&ICE5_HW_CDONE);
+    gpio_init_dw(&ICE5_HW_CRST);
+    gpio_init_dw(&ICE5_HW_RST);
+
+    gpio_dw(&ICE5_HW_CS, 1u);
+    gpio_dw(&ICE5_HW_CRST, 1u);
+    gpio_dw(&ICE5_HW_RST, 1u);
+}
+
+static u8 fpga_stream_bitstream(void)
+{
+    u16 chunk;
+    u16 i;
+    u16 skip;
+    const __prog__ u8 *data;
+    u16 len;
+
+    skip = FPGA_BITSTREAM_SYNC_OFFSET;
+
+    for (chunk = 0u; chunk < FPGA_BITSTREAM_CHUNK_COUNT; chunk++) {
+        data = FPGA_BITSTREAM_CHUNKS[chunk];
+        len = FPGA_BITSTREAM_CHUNK_LEN[chunk];
+
+        if (skip != 0u) {
+            if (skip >= len) {
+                skip = (u16)(skip - len);
+                continue;
+            }
+
+            data = &data[skip];
+            len = (u16)(len - skip);
+            skip = 0u;
+        }
+
+        for (i = 0u; i < len; i++) {
+            if (!spi2_bus_write_u8(data[i])) {
+                return 0u;
+            }
+        }
+    }
+
+    return 1u;
+}
+
+static u8 fpga_post_config_clocks(void)
+{
+    u8 i;
+
+    for (i = 0u; i < FPGA_POST_CONFIG_BYTES; i++) {
+        if (!spi2_bus_write_u8(0x00u)) {
+            return 0u;
+        }
+    }
+
+    return 1u;
+}
+
+static u8 fpga_wait_cdone(void)
+{
+    u16 elapsed_us;
+
+    for (elapsed_us = 0u; elapsed_us < FPGA_CDONE_TIMEOUT_US; elapsed_us++) {
+        if (gpio_dr(&ICE5_HW_CDONE)) {
+            return 1u;
+        }
+        fpga_delay_us(1u);
+    }
+
+    return gpio_dr(&ICE5_HW_CDONE);
+}
+
+static volatile bool ICE5_CDONE = 0u;
+static volatile bool ICE5_UPLOADING = 0u;
+static volatile bool ICE5_UPLOAD_FAILED = 0u;
+static volatile u8 ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_IDLE;
+
+void fpga_prog_load(void)
+{
+    u8 ok;
+
+    if (ICE5_UPLOADING) {
+        return;
+    }
+
+    ok = 0u;
+    ICE5_CDONE = 0u;
+    ICE5_UPLOAD_FAILED = 0u;
+    ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_LOADING;
+    ICE5_UPLOADING = 1u;
+
+    fpga_gpio_init();
+    if (!spi2_bus_configure(FPGA_SPI_HZ, SPI2_BUS_MODE0)) {
+        ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_PPS_FAILED;
+        goto fpga_prog_done;
+    }
+
+    gpio_dw(&ICE5_HW_CS, 0u);
+    gpio_dw(&ICE5_HW_CRST, 0u);
+    fpga_delay_us(FPGA_CRESET_LOW_US);
+    gpio_dw(&ICE5_HW_CRST, 1u);
+    fpga_delay_us(FPGA_CLEAR_WAIT_US);
+
+    if (!fpga_stream_bitstream()) {
+        ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_STREAM_FAILED;
+        goto fpga_prog_done;
+    }
+
+    ICE5_CDONE = fpga_wait_cdone();
+    if (!ICE5_CDONE) {
+        ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_CDONE_FAILED;
+        goto fpga_prog_done;
+    }
+    ok = 1u;
+
+    if (!fpga_post_config_clocks()) {
+        ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_POST_FAILED;
+        goto fpga_prog_done;
+    }
+
+    if (!spi2_bus_wait_idle()) {
+        ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_POST_FAILED;
+        goto fpga_prog_done;
+    }
+
+fpga_prog_done:
+    gpio_dw(&ICE5_HW_CS, 1u);
+    if (!ok) {
+        /* unconfigured FPGA: hold it in reset, off the shared bus */
+        gpio_dw(&ICE5_HW_CRST, 0u);
+    }
+    ICE5_UPLOAD_FAILED = ok ? 0u : 1u;
+    if (ok) {
+        ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_DONE;
+    }
+    ICE5_UPLOADING = 0u;
+}
+
+bool fpga_is_cdone(void) {
+    return 1 == ICE5_CDONE;
+}
+
+bool fpga_is_uploading(void)
+{
+    return 1 == ICE5_UPLOADING;
+}
+
+bool fpga_upload_failed(void)
+{
+    return 1 == ICE5_UPLOAD_FAILED;
+}
+
+u8 fpga_upload_status(void)
+{
+    return ICE5_UPLOAD_STATUS;
+}

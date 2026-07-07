@@ -1,0 +1,96 @@
+#ifndef EMETER_H
+#define EMETER_H
+
+#include "utils.h"
+
+/*
+ * MAX78615+PPM polyphase energy measurement processor.
+ * SPI slave on the shared SPI2 bus (FPGA is the other slave); own chip
+ * select on RC8. See emeter.c for the wire protocol.
+ */
+
+/* poll error codes */
+#define EMETER_ERROR_NONE      0u
+#define EMETER_ERROR_FPGA_BUSY 1u  /* bus owned by FPGA bitstream upload */
+#define EMETER_ERROR_PPS       2u  /* SPI2 bus configuration failed */
+#define EMETER_ERROR_SPI       3u  /* SPI transfer failed */
+#define EMETER_ERROR_SPI_TX    4u
+#define EMETER_ERROR_SPI_RX    5u
+#define EMETER_ERROR_ALL_ZERO  6u  /* MISO stuck low: no link */
+#define EMETER_ERROR_ALL_ONES  7u  /* MISO stuck/floating high: no link */
+#define EMETER_ERROR_NO_LINK   8u  /* garbage response */
+#define EMETER_ERROR_STALE     9u  /* link up but CYCLE counter frozen */
+
+/*
+ * Register word addresses (datasheet Table 41). Single-word SPI
+ * transactions can only reach word addresses <= 0x3F.
+ */
+#define EMETER_REG_COMMAND    0x00u
+#define EMETER_REG_FW_VERSION 0x01u
+#define EMETER_REG_CONFIG     0x02u
+#define EMETER_REG_CONTROL    0x03u
+#define EMETER_REG_CYCLE      0x04u  /* high-rate sample counter */
+#define EMETER_REG_DIVISOR    0x05u
+#define EMETER_REG_FRAME      0x06u  /* accumulation interval counter */
+#define EMETER_REG_STATUS     0x07u
+#define EMETER_REG_DIO_STATE  0x08u
+#define EMETER_REG_IND_WR_DATA 0x09u
+#define EMETER_REG_IND_WR_ADDR 0x0Au
+#define EMETER_REG_IND_RD_ADDR 0x0Bu
+#define EMETER_REG_IND_RD_DATA 0x0Cu
+#define EMETER_REG_VA_RMS     0x13u
+#define EMETER_REG_VB_RMS     0x14u
+#define EMETER_REG_VC_RMS     0x15u
+#define EMETER_REG_VT_RMS     0x16u
+#define EMETER_REG_IA_RMS     0x1Du
+#define EMETER_REG_IB_RMS     0x1Eu
+#define EMETER_REG_IC_RMS     0x1Fu
+#define EMETER_REG_IT_RMS     0x20u
+#define EMETER_REG_WATT_A     0x24u
+#define EMETER_REG_WATT_B     0x25u
+#define EMETER_REG_WATT_C     0x26u
+#define EMETER_REG_WATT_T     0x2Du
+#define EMETER_REG_PF_T       0x3Cu  /* S.22 */
+#define EMETER_REG_FREQ       0x3Du  /* S.16, Hz */
+#define EMETER_REG_TEMPC_A    0x3Eu  /* S.10, degrees C */
+
+/* word addresses above 0x3F, reachable only through the indirect
+   write/read registers */
+#define EMETER_XREG_SAMPLES      0x67u  /* high-rate samples per interval */
+#define EMETER_XREG_STATUS_CLEAR 0x68u
+
+/* STATUS register bits (datasheet Table 27) */
+#define EMETER_STATUS_DRDY     0x800000UL
+#define EMETER_STATUS_XSTATE   0x000002UL
+#define EMETER_STATUS_RESET    0x000001UL
+#define EMETER_STATUS_ALARMS   0x7FFFFCUL
+
+typedef struct {
+    bool link_ok;   /* responses look like a live chip */
+    bool alive;     /* CYCLE advanced while polling */
+    bool busy;      /* poll skipped: FPGA owns the bus */
+    u8 error;       /* EMETER_ERROR_* */
+    u32 fw_version;
+    u32 status;
+    u32 cycle;
+    u32 frame;
+    u32 va_rms;     /* raw S.23, fraction of full scale */
+    u32 vb_rms;
+    u32 vc_rms;
+    u32 pf_t;       /* raw S.22, total power factor */
+    u32 freq;       /* raw S.16, Hz */
+    u32 tempc;      /* raw S.10, degrees C, channel A */
+} EmeterSample;
+
+void emeter_init(void);
+u8 emeter_poll(EmeterSample *sample);
+
+/* raw single-word register access for service/debug use; each call
+   acquires and configures the shared bus */
+u8 emeter_read_reg(u8 addr, u32 *value);
+u8 emeter_write_reg(u8 addr, u32 value);
+
+/* sign-extend a raw 24-bit register value */
+s32 emeter_s24(u32 raw);
+
+#endif /* EMETER_H */

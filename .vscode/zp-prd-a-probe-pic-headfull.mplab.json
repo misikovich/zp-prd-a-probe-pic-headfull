@@ -53,7 +53,7 @@
             "files": [
                 {
                     "include": "**/*",
-                    "exclude": "**/@(build|_build|out|cmake|.vscode)/**/*"
+                    "exclude": "**/@(build|_build|out|cmake|.vscode|third_party|rtos|drivers)/**/*"
                 },
                 "config.mcc/mcc_generated_files/system/src/dmt.c",
                 "config.mcc/mcc_generated_files/system/src/dmt_asm.s",
@@ -73,7 +73,8 @@
                 "config.mcc/mcc_generated_files/system/src/pins.c",
                 "config.mcc/mcc_generated_files/system/src/interrupt.c",
                 "config.mcc/mcc_generated_files/system/src/traps.c",
-                "config.mcc/mcc_generated_files/system/src/where_was_i.s"
+                "config.mcc/mcc_generated_files/system/src/where_was_i.s",
+                "config.mcc/mcc_generated_files/spi_host/src/spi1.c"
             ]
         }
     ]

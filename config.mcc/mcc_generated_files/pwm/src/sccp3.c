@@ -9,7 +9,7 @@
  *
  * @skipline @version   Firmware Driver Version 2.1.1
  *
- * @skipline @version   PLIB Version 1.6.7
+ * @skipline @version   PLIB Version 1.6.6
  *
  * @skipline  Device : dsPIC33CK256MP506
 */
@@ -71,8 +71,8 @@ void SCCP3_PWM_Initialize (void)
     CCP3CON1H = 0x0U;
     // ASDG 0x0; SSDG disabled; ASDGM disabled; PWMRSEN disabled; U
     CCP3CON2L = 0x0U;
-    // ICSEL ; AUXOUT Disabled; ICGSM Level-Sensitive mode; OCAEN disabled; OENSYNC disabled; U
-    CCP3CON2H = 0x0U;
+    // ICSEL ; AUXOUT Disabled; ICGSM Level-Sensitive mode; OCAEN enabled; OENSYNC disabled; U
+    CCP3CON2H = 0x100U;
     // PSSACE Tri-state; POLACE disabled; OSCNT None; OETRIG disabled; U
     CCP3CON3H = 0x0U;
     // ICOV disabled; ICDIS disabled; SCEVT disabled; ASEVT disabled; TRCLR disabled; TRSET disabled; ICGARM disabled; U

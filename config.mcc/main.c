@@ -1,35 +1,93 @@
-/*
-� [2026] Microchip Technology Inc. and its subsidiaries.
 
-    Subject to your compliance with these terms, you may use Microchip 
-    software and any derivatives exclusively with Microchip products. 
-    You are responsible for complying with 3rd party license terms  
-    applicable to your use of 3rd party software (including open source  
-    software) that may accompany Microchip software. SOFTWARE IS ?AS IS.? 
-    NO WARRANTIES, WHETHER EXPRESS, IMPLIED OR STATUTORY, APPLY TO THIS 
-    SOFTWARE, INCLUDING ANY IMPLIED WARRANTIES OF NON-INFRINGEMENT,  
-    MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT 
-    WILL MICROCHIP BE LIABLE FOR ANY INDIRECT, SPECIAL, PUNITIVE, 
-    INCIDENTAL OR CONSEQUENTIAL LOSS, DAMAGE, COST OR EXPENSE OF ANY 
-    KIND WHATSOEVER RELATED TO THE SOFTWARE, HOWEVER CAUSED, EVEN IF 
-    MICROCHIP HAS BEEN ADVISED OF THE POSSIBILITY OR THE DAMAGES ARE 
-    FORESEEABLE. TO THE FULLEST EXTENT ALLOWED BY LAW, MICROCHIP?S 
-    TOTAL LIABILITY ON ALL CLAIMS RELATED TO THE SOFTWARE WILL NOT 
-    EXCEED AMOUNT OF FEES, IF ANY, YOU PAID DIRECTLY TO MICROCHIP FOR 
-    THIS SOFTWARE.
-*/
 #include "mcc_generated_files/system/system.h"
+#include <xc.h>
+#include "utils.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+
+#include "spi_bus.h"
+#include "emeter.h"
+#include "fpga.h"
+#include "rgbw.h"
 /*
     Main application
 */
 
+static void heartbeat_task(void *parameters)
+{
+    unused(parameters);
+    task_hold(5u);
+    dlog("Started Task: heartbeat_task");
+
+    forever
+    {
+        task_hold(500u);
+    }
+}
+
+static void rgbw_ticker(void *parameters)
+{
+    unused(parameters);
+    task_hold(10u);
+    dlog("Started Task: rgbw_ticker");
+
+    forever
+    {
+        rgbw_tick();
+    }
+}
+
+
+static void hello_oneshot(void *parameters)
+{
+    unused(parameters);
+    task_hold(15u);
+    dlog("Started Task: hello_oneshot");
+    task_hold(10u);
+
+    rgbw_hold_transition(RGBW_WHITE,    100u);
+    rgbw_hold_transition(RGBW_CLEAR,    500u);
+    rgbw_hold_transition(RGBW_RED,      100u);
+    rgbw_hold_transition(RGBW_CLEAR,    500u);
+    rgbw_hold_transition(RGBW_GREEN,    100u);
+    rgbw_hold_transition(RGBW_CLEAR,    500u);
+    rgbw_hold_transition(RGBW_BLUE,     100u);
+    rgbw_hold_transition(RGBW_CLEAR,    500u);
+    task_hold(1200u);
+    rgbw_hold_transition(RGBW_WHITEF,    200u);
+    task_hold(500u);
+    rgbw_hold_transition(RGBW_CLEAR,    500u);
+    rgbw_hold_transition(RGBW_REDF,     100u);
+    rgbw_hold_transition(RGBW_CLEAR,    500u);
+    rgbw_hold_transition(RGBW_GREENF,   100u);
+    rgbw_hold_transition(RGBW_CLEAR,    500u);
+    rgbw_hold_transition(RGBW_BLUEF,    100u);
+    rgbw_hold_transition(RGBW_CLEAR,    500u);
+
+    vTaskDelete(NULL);
+}
+
 int main(void)
 {
     SYSTEM_Initialize();
+    dlog("");
+    dlog("System Initialized");
 
+    spi_bus_init();
+    fpga_park();
+    emeter_init();
+    rgbw_init();
+    dlog("Drivers Initialized");
 
-    while(1)
-    {
-        
-    }    
+    xTaskCreate(heartbeat_task, "beat", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(rgbw_ticker, "rgbw", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(hello_oneshot, "hello", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    dlog("Tasks Created");
+
+    /* Never returns; the port takes over Timer1 for the tick. */
+    vTaskStartScheduler();
+
+    /* Only reached if there was not enough heap for the idle task. */
+    forever;
 }

@@ -34,6 +34,9 @@ There is no test suite; a clean XC16 build is the minimum validation for firmwar
 - `.vscode/zp-prd-a-probe-pic-headfull.mplab.json` — the MPLAB project file (device, DFP pack `dsPIC33CK-MP_DFP`, toolchain XC16 2.10). Do not delete; keep aligned with the selected device/toolchain.
 - `config.mcc/` — MPLAB Code Configurator (MCC) configuration.
 - `protocol/` — currently empty; intended for probe/client protocol definitions.
+- `third_party/FreeRTOS-Kernel/` — vendored FreeRTOS kernel V11.2.0 (unmodified subset; see its `README-vendored.md`).
+- `rtos/` — dsPIC33C FreeRTOS port (`rtos/port/`), `FreeRTOSConfig.h`, and hooks. The RTOS tick owns **Timer1**; keep Timer1 out of MCC. ISRs that call `...FromISR()` APIs must run at interrupt priority 1.
+- FreeRTOS sources are wired into the build via `cmake/zp-prd-a-probe-pic-headfull/default/user.cmake` (not the MPLAB fileSet — `third_party/` and `rtos/` are excluded from its glob to avoid double compilation).
 
 Do not commit generated MPLAB/CMake/build artifacts.
 
