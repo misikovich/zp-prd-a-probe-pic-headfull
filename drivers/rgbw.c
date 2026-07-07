@@ -20,10 +20,10 @@
 #define LED_PWM_PERIOD_COUNTS 50000u
 
 /* per-channel duty ceilings in the raw 0..255 domain */
-#define LED_MAX_R           150u
-#define LED_MAX_G           100u
-#define LED_MAX_B           150u
-#define LED_MAX_W           100u
+#define LED_MAX_R           80u
+#define LED_MAX_G           80u
+#define LED_MAX_B           80u
+#define LED_MAX_W           80u
 
 #define RGBW_TPS 30
 static inline void rgbw_hold_cycle(void) {
