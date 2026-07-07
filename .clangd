@@ -1,0 +1,10 @@
+CompileFlags:
+  Remove:
+    - -mcpu=*
+    - -mdfp=*
+    - -msmart-io=*
+    - -msfr-warn=*
+    - -mno-*
+    - -momf=*
+    - -mlarge-*
+    - -mconst-in-*
