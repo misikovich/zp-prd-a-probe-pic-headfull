@@ -1,8 +1,8 @@
 CompileFlags:
   Add:
-    - -isystem/home/ss1/.mchp_packs/Microchip/dsPIC33CK-MP_DFP/1.15.423/xc16/support/generic/h
-    - -isystem/home/ss1/.mchp_packs/Microchip/dsPIC33CK-MP_DFP/1.15.423/xc16/support/dsPIC33C/h
-    - -isystem/opt/microchip/xc16/v2.10/include
+    - -isystem/Users/misikovich/.mchp_packs/Microchip/dsPIC33CK-MP_DFP/1.15.423/xc16/support/generic/h
+    - -isystem/Users/misikovich/.mchp_packs/Microchip/dsPIC33CK-MP_DFP/1.15.423/xc16/support/dsPIC33C/h
+    - -isystem/Applications/microchip/xc16/v2.10/include
     - -D__dsPIC33CK256MP506__=1
     - -D__XC16__=1
     - -D__prog__=
