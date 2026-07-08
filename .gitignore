@@ -1,4 +1,6 @@
 .generated_files/
+.cache
+.claude
 build/
 dist/
 nbproject/
