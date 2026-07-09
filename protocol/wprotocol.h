@@ -88,19 +88,41 @@ typedef enum {
   WP_TYPE_INVALID      = 0x00, /* reserved, never transmitted */
 
   /* measurements, probe -> client, fire-and-forget */
-  WP_TYPE_AMBIENT_TEMP = 0x01, /* int16, 0.01 degC/LSB */
-  WP_TYPE_FPGA_CDONE   = 0x02, /* uint8, 0-1 bool */
-  WP_TYPE_EM_LINK      = 0x10, /* uint8, states: 00 - all zero, FF - all F, 01 - ok */
-  WP_TYPE_EM_VA        = 0x11, /* uint16[], array */
-  WP_TYPE_EM_VB        = 0x12, /* uint16[], array */
-  WP_TYPE_EM_VC        = 0x13, /* uint16[], array */
-  WP_TYPE_EM_IA        = 0x14, /* uint16[], array */
-  WP_TYPE_EM_IB        = 0x15, /* uint16[], array */
-  WP_TYPE_EM_IC        = 0x16, /* uint16[], array */
+  WP_TYPE_TEMP_AMBIENT_ADC  = 0x01, /* int16, 0-65536 */
+  WP_TYPE_TEMP_SOCKET_ADC   = 0x02, /* int16, 0-65536 */
+  WP_TYPE_TEMP_RCD_ADC      = 0x03, /* int16, 0-65536 */
+  WP_TYPE_PWR_HWID_ADC      = 0x04, /* int16, 0-65536 */
+  WP_TYPE_EM_LINK           = 0x10, /* uint8, states: 00 - all zero, FF - all F, 01 - ok */
+  WP_TYPE_EM_VA             = 0x11, /* uint16[buffer_log_size], array */
+  WP_TYPE_EM_VB             = 0x12, /* uint16[buffer_log_size], array */
+  WP_TYPE_EM_VC             = 0x13, /* uint16[buffer_log_size], array */
+  WP_TYPE_EM_IA             = 0x14, /* uint16[buffer_log_size], array */
+  WP_TYPE_EM_IB             = 0x15, /* uint16[buffer_log_size], array */
+  WP_TYPE_EM_IC             = 0x16, /* uint16[buffer_log_size], array */
+  WP_TYPE_EM_FWVER          = 0x17, /* uint8[3], 3 bytes 04FC08 */
+  WP_TYPE_EM_DRDY           = 0x18, /* uint8, 0-1 bool */
+  WP_TYPE_EM_FHZ            = 0x19, /* uint16, 0.01 hz/LSB */
+  WP_TYPE_EM_WARN           = 0x1A, /* uint8 */
+  WP_TYPE_EM_ERR            = 0x1B, /* uint8 */
+  WP_TYPE_EM_TEMP           = 0x1C, /* uint16, 0-65565 */
+  WP_TYPE_EM_INT            = 0x1D, /* uint8, 0-1 bool */
+  WP_TYPE_EM_ALARM          = 0x1E, /* uint8, 0-1 bool */
+  WP_TYPE_SRV_POS_ADC       = 0x21, /* uint16[buffer_log_size], array */
+  WP_TYPE_SRV_CURR_ADC      = 0x22, /* uint16[buffer_log_size], array */
+  WP_TYPE_SRV_STATE         = 0x23, /* uint8, states: FF - stop, 01 - locking, 02 - unlocking */
+  WP_TYPE_GRID_NGND_ADC     = 0x31, /* uint16, 0-65565 */
+  WP_TYPE_GRID_L1L2_ADC     = 0x32, /* uint16, 0-65565 */
+  WP_TYPE_RCD_ERR           = 0x41, /* uint8, 0-1 bool */
+  WP_TYPE_RCD_F6MA          = 0x42, /* uint8, 0-1 bool */
+  WP_TYPE_RCD_F30MA         = 0x43, /* uint8, 0-1 bool */
+  WP_TYPE_FPGA_CDONE        = 0x51, /* uint8, 0-1 bool */
+  WP_TYPE_FPGA_INT          = 0x51, /* uint8, 0-1 bool */
 
+  
   /* control, acknowledged */
   WP_TYPE_ACK          = 0xF0, /* uint8: TYPE being acknowledged */
   WP_TYPE_ERROR        = 0xF1, /* uint8: error code */
+  WP_TYPE_HEARTBEAT    = 0xFF  /* uint8: CC */
 } wp_type_t;
 
 
