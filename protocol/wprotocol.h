@@ -60,7 +60,7 @@
         11     - version 1, source: probe
         01     - TYPE:  WP_TYPE_AMBIENT_TEMP
         02     - LEN:   2 bytes
-        RD2 08  - VALUE: 0x08D2 = 2258 -> 22.58 degC (int16, 0.01 degC/LSB)
+        D2 08  - VALUE: 0x08D2 = 2258 -> 22.58 degC (int16, 0.01 degC/LSB)
         xx xx  - CRC-16 over bytes 11 01 02 D2 08, low byte first
 */
 
@@ -90,9 +90,13 @@ typedef enum {
   /* measurements, probe -> client, fire-and-forget */
   WP_TYPE_AMBIENT_TEMP = 0x01, /* int16, 0.01 degC/LSB */
   WP_TYPE_FPGA_CDONE   = 0x02, /* uint8, 0-1 bool */
-  WP_TYPE_EM_VA        = 0X10, /* uint16[], array */
-  WP_TYPE_EM_VB        = 0X10, /* uint16[], array */
-  WP_TYPE_EM_VC        = 0X10, /* uint16[], array */
+  WP_TYPE_EM_LINK      = 0x10, /* uint8, states: 00 - all zero, FF - all F, 01 - ok */
+  WP_TYPE_EM_VA        = 0x11, /* uint16[], array */
+  WP_TYPE_EM_VB        = 0x12, /* uint16[], array */
+  WP_TYPE_EM_VC        = 0x13, /* uint16[], array */
+  WP_TYPE_EM_IA        = 0x14, /* uint16[], array */
+  WP_TYPE_EM_IB        = 0x15, /* uint16[], array */
+  WP_TYPE_EM_IC        = 0x16, /* uint16[], array */
 
   /* control, acknowledged */
   WP_TYPE_ACK          = 0xF0, /* uint8: TYPE being acknowledged */
