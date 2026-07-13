@@ -190,7 +190,7 @@ const TY = {
   ACT_SRV_TEST: 0x20, SRV_POS_ADC: 0x21, SRV_CURR_ADC: 0x22, SRV_STATE: 0x23,
   GRID_NGND_ADC: 0x31, GRID_L1L2_ADC: 0x32,
   ACT_RCD_TEST: 0x40, RCD_ERR: 0x41, RCD_F6MA: 0x42, RCD_F30MA: 0x43,
-  ACT_FPGA_TEST: 0x50, FPGA_CDONE: 0x51, FPGA_INT: 0x52,
+  ACT_FPGA_TEST: 0x50, FPGA_CDONE: 0x51, FPGA_INT: 0x52, FPGA_STATUS: 0x53,
   ACK: 0xF0, ERROR: 0xF1, HEARTBEAT: 0xFF,
 };
 
@@ -233,9 +233,12 @@ const TYPES = {
   [TY.RCD_F6MA]:     { name: 'RCD_F6MA',  lbl: 'Trip 6 mA',  kind: 'bool', onLbl: 'TRIP', offLbl: '—', onCls: 'ok' },
   [TY.RCD_F30MA]:    { name: 'RCD_F30MA', lbl: 'Trip 30 mA', kind: 'bool', onLbl: 'TRIP', offLbl: '—', onCls: 'ok' },
 
-  [TY.ACT_FPGA_TEST]: { name: 'ACT_FPGA_TEST', lbl: 'FPGA test', kind: 'bool', act: true },
+  [TY.ACT_FPGA_TEST]: { name: 'ACT_FPGA_TEST', lbl: 'FPGA test', kind: 'bool', act: true, oneShot: true },
   [TY.FPGA_CDONE]:    { name: 'FPGA_CDONE', lbl: 'CDONE', kind: 'bool', onLbl: 'HIGH', offLbl: 'LOW', onCls: 'ok' },
   [TY.FPGA_INT]:      { name: 'FPGA_INT',   lbl: 'INT',   kind: 'bool', onLbl: 'HIGH', offLbl: 'LOW', onCls: 'warn' },
+  [TY.FPGA_STATUS]:   { name: 'FPGA_STATUS', lbl: 'Upload', kind: 'enum',
+                        map: { 0: ['IDLE', ''], 1: ['LOADING', 'warn'], 2: ['DONE', 'ok'],
+                               3: ['BUS FAILED', 'err'], 4: ['CDONE FAILED', 'err'] } },
 
   [TY.ACK]:       { name: 'ACK',       lbl: 'Ack',       kind: 'u8', ctl: true },
   [TY.ERROR]:     { name: 'ERROR',     lbl: 'Error',     kind: 'hex', ctl: true },
@@ -246,7 +249,8 @@ const GROUPS = [
   { title: 'Generic sensors', types: [TY.TEMP_AMBIENT_ADC, TY.TEMP_SOCKET_ADC, TY.TEMP_RCD_ADC, TY.PWR_HWID_ADC] },
   { title: 'Grid detect', types: [TY.GRID_NGND_ADC, TY.GRID_L1L2_ADC] },
   { title: 'RCD — benvac RDC121', act: TY.ACT_RCD_TEST, types: [TY.RCD_ERR, TY.RCD_F6MA, TY.RCD_F30MA] },
-  { title: 'FPGA — iCE40LP1K', act: TY.ACT_FPGA_TEST, types: [TY.FPGA_CDONE, TY.FPGA_INT] },
+  { title: 'FPGA — iCE5LP1K-SG48', act: TY.ACT_FPGA_TEST,
+    types: [TY.FPGA_STATUS, TY.FPGA_CDONE, TY.FPGA_INT] },
   { title: 'Servo', act: TY.ACT_SRV_TEST, types: [TY.SRV_STATE], charts: [TY.SRV_POS_ADC, TY.SRV_CURR_ADC] },
   { title: 'EMeter — MAX78615+PPM/C01', wide: true,
     types: [TY.EM_LINK, TY.EM_FWVER, TY.EM_DRDY, TY.EM_FHZ, TY.EM_WARN, TY.EM_ERR,
@@ -342,30 +346,43 @@ class Transport {
 }
 
 class WebSerialTransport extends Transport {
-  constructor(baud) { super(); this.baud = baud; this.port = null; this.reader = null; }
+  constructor(baud, port = null) {
+    super();
+    this.baud = baud;
+    this.port = port;
+    this.reader = null;
+    this.readLoopPromise = null;
+    this.lastReadError = null;
+  }
   async connect() {
-    this.port = await navigator.serial.requestPort();
+    if (!this.port) this.port = await navigator.serial.requestPort();
     await this.port.open({ baudRate: this.baud });
     this.connected = true;
-    this._readLoop();
+  }
+  startReading() {
+    if (this.connected && !this.readLoopPromise) {
+      this.readLoopPromise = this._readLoop();
+    }
   }
   async _readLoop() {
+    this.lastReadError = null;
     try {
       while (this.connected && this.port.readable) {
-        this.reader = this.port.readable.getReader();
+        const reader = this.port.readable.getReader();
+        this.reader = reader;
         try {
           for (;;) {
-            const { value, done } = await this.reader.read();
+            const { value, done } = await reader.read();
             if (done) break;
             if (value?.length) this.onData?.(value);
           }
         } finally {
-          this.reader.releaseLock();
-          this.reader = null;
+          reader.releaseLock();
+          if (this.reader === reader) this.reader = null;
         }
       }
     } catch (e) {
-      /* device unplugged / read error */
+      this.lastReadError = e;
     }
     if (this.connected) { this.connected = false; this.onClose?.(); }
   }
@@ -376,8 +393,8 @@ class WebSerialTransport extends Transport {
   async disconnect() {
     this.connected = false;
     try { await this.reader?.cancel(); } catch {}
-    try { await this.port?.close(); } catch {}
-    this.port = null;
+    try { await this.readLoopPromise; } finally { this.readLoopPromise = null; }
+    if (this.port?.readable || this.port?.writable) await this.port.close();
   }
 }
 
@@ -391,6 +408,9 @@ class SimTransport extends Transport {
     this.t = 0;                                    // waveform phase
     this.act = { [TY.ACT_SRV_TEST]: 0, [TY.ACT_RCD_TEST]: 0, [TY.ACT_FPGA_TEST]: 0 };
     this.actSince = {};
+    this.fpgaQueued = false;
+    this.fpgaStatus = 0;
+    this.fpgaCdone = 0;
     this.rxParser = new FrameParser();
     this.rxParser.onFrame = f => this._onClientFrame(f);
   }
@@ -399,7 +419,8 @@ class SimTransport extends Transport {
     const every = (ms, fn) => this.timers.push(setInterval(fn, ms));
     every(500, () => this._emit(TY.HEARTBEAT, [WP.HEARTBEAT_VALUE]));
     every(1000, () => this._slowTelemetry());
-    every(200, () => this._fastTelemetry());
+    every(500, () => this._fastTelemetry());
+    every(100, () => this._fpgaTelemetry());
     every(15000, () => this._corruptFrame());
   }
   async disconnect() {
@@ -414,13 +435,31 @@ class SimTransport extends Transport {
   }
   _onClientFrame(f) {
     if ((f.hdr & 0x0F) !== WP.SRC_CLIENT) return;
+    if (f.type === TY.ACT_FPGA_TEST) {
+      if (f.value.length !== 1 || f.value[0] !== 1 || this.fpgaQueued) return;
+      this.fpgaQueued = true;                       // ignore retries immediately
+      this.timers.push(setTimeout(() => {           // firmware reaction latency
+        this.act[TY.ACT_FPGA_TEST] = 1;
+        this.actSince[TY.ACT_FPGA_TEST] = Date.now();
+        this.fpgaStatus = 1;                        // LOADING
+        this.fpgaCdone = 0;
+        this.timers.push(setTimeout(() => {
+          this.act[TY.ACT_FPGA_TEST] = 0;            // one-shot auto-clear
+          delete this.actSince[TY.ACT_FPGA_TEST];
+          this.fpgaStatus = 2;                      // DONE remains visible
+          this.fpgaCdone = 1;
+          this.fpgaQueued = false;
+        }, 700));
+      }, 350));
+      return;
+    }
     if (f.type in this.act && f.value.length === 1) {
-      setTimeout(() => {                           // firmware reaction latency
+      this.timers.push(setTimeout(() => {           // firmware reaction latency
         if (this.act[f.type] !== f.value[0]) {
           this.act[f.type] = f.value[0];
           this.actSince[f.type] = Date.now();
         }
-      }, 350);
+      }, 350));
     }
   }
   _u16(v) { v = Math.max(0, Math.min(65535, Math.round(v))); return [v & 0xFF, v >> 8]; }
@@ -456,8 +495,6 @@ class SimTransport extends Transport {
     const rcdT = this.act[TY.ACT_RCD_TEST] ? Date.now() - this.actSince[TY.ACT_RCD_TEST] : 0;
     this._emit(TY.RCD_F6MA, [rcdT > 1500 ? 1 : 0]);
     this._emit(TY.RCD_F30MA, [rcdT > 3500 ? 1 : 0]);
-    this._emit(TY.FPGA_CDONE, [1]);
-    this._emit(TY.FPGA_INT, [this.act[TY.ACT_FPGA_TEST] ? (Date.now() >> 9) & 1 : 0]);
   }
   _fastTelemetry() {
     this.t += WP.BUFFER_LOG_SIZE * 0.09;
@@ -468,7 +505,7 @@ class SimTransport extends Transport {
     this._emit(TY.EM_IA, this._arr(t => s(t, 0.3, 4000, 32768)));
     this._emit(TY.EM_IB, this._arr(t => s(t, 2.4, 3600, 32768)));
     this._emit(TY.EM_IMAX, this._arr(t => 36900 + 300 * Math.sin(t * 0.7)));
-    for (const type of [TY.ACT_SRV_TEST, TY.ACT_RCD_TEST, TY.ACT_FPGA_TEST]) {
+    for (const type of [TY.ACT_SRV_TEST, TY.ACT_RCD_TEST]) {
       this._emit(type, [this.act[type]]);
     }
     if (this.act[TY.ACT_SRV_TEST]) {
@@ -480,6 +517,12 @@ class SimTransport extends Transport {
     } else {
       this._emit(TY.SRV_STATE, [0xFF]);
     }
+  }
+  _fpgaTelemetry() {
+    this._emit(TY.ACT_FPGA_TEST, [this.act[TY.ACT_FPGA_TEST]]);
+    this._emit(TY.FPGA_STATUS, [this.fpgaStatus]);
+    this._emit(TY.FPGA_CDONE, [this.fpgaCdone]);
+    this._emit(TY.FPGA_INT, [0]);
   }
   _corruptFrame() {
     if (!this.connected) return;
@@ -501,9 +544,22 @@ const app = {
   stats: { rx: 0, tx: 0, crc: 0, ver: 0, bytes: 0 },
   lastFrameAt: 0,
   lastHbAt: 0,
+  connectedAt: 0,
+  lastSerial: null,                // previously authorized {port, baud}
+  reconnectTimer: null,
+  reconnectBusy: false,
+  reconnectStarting: false,
+  reconnectToken: 0,
+  reconnectPhase: null,
+  reconnectVerifying: false,
+  verifyStartedAt: 0,
   acts: {},                      // type -> {desired, timer, tries, btn, stateEl}
   logPaused: false,
 };
+
+const HB_TIMEOUT_MS = 5000;
+const SERIAL_REOPEN_SETTLE_MS = 250;
+const SERIAL_RETRY_MS = 2000;
 
 const $ = id => document.getElementById(id);
 const hex = b => b.toString(16).toUpperCase().padStart(2, '0');
@@ -700,7 +756,10 @@ function onFrame(f) {
   if (!meta) { refreshStats(); return; }
 
   app.latest[f.type] = { v, ts: Date.now() };
-  if (f.type === TY.HEARTBEAT) app.lastHbAt = Date.now();
+  if (f.type === TY.HEARTBEAT) {
+    app.lastHbAt = Date.now();
+    finishReconnectVerification();
+  }
 
   const row = app.rows[f.type];
   if (row?.valEl) {
@@ -713,16 +772,22 @@ function onFrame(f) {
     }
   }
   if (meta.kind === 'u16arr') app.charts[f.type]?.push(v);
-  if (meta.act) renderAct(f.type);
+  if (meta.act) {
+    const a = app.acts[f.type];
+    if (a?.timer && v === a.desired) stopAct(f.type);
+    renderAct(f.type);
+  }
   refreshStats();
 }
 
 /* ---- ACT control: resend desired value until probe state converges ---- */
 function actToggle(type) {
   const a = app.acts[type];
-  if (a.timer) { stopAct(type); renderAct(type); return; }   // cancel pending
+  const oneShot = TYPES[type].oneShot;
+  if (oneShot && (a.timer || (app.latest[type]?.v ?? 0))) return;
+  if (!oneShot && a.timer) { stopAct(type); renderAct(type); return; } // cancel pending
   const cur = app.latest[type]?.v ?? 0;
-  a.desired = cur ? 0 : 1;
+  a.desired = oneShot ? 1 : (cur ? 0 : 1);
   a.tries = 0;
   a.failed = false;
   sendAct(type, a.desired);
@@ -751,6 +816,30 @@ function renderAct(type) {
   const a = app.acts[type];
   if (!a) return;
   const v = app.latest[type]?.v ?? 0;
+  if (TYPES[type].oneShot) {
+    if (a.timer) {
+      a.stateEl.textContent = 'PENDING';
+      a.stateEl.className = 'chip warn';
+      a.btn.textContent = 'Pending…';
+      a.btn.disabled = true;
+    } else if (v) {
+      a.stateEl.textContent = 'LOADING';
+      a.stateEl.className = 'chip warn';
+      a.btn.textContent = 'Loading…';
+      a.btn.disabled = true;
+    } else if (a.failed) {
+      a.stateEl.textContent = 'NO CONVERGE';
+      a.stateEl.className = 'chip err';
+      a.btn.textContent = 'Run Test';
+      a.btn.disabled = !app.transport?.connected;
+    } else {
+      a.stateEl.textContent = 'IDLE';
+      a.stateEl.className = 'chip';
+      a.btn.textContent = 'Run Test';
+      a.btn.disabled = !app.transport?.connected;
+    }
+    return;
+  }
   if (a.timer) {
     a.stateEl.textContent = 'PENDING → ' + a.desired;
     a.stateEl.className = 'chip warn';
@@ -783,13 +872,152 @@ async function txFrame(type, value) {
 }
 
 /* ---- connection ---- */
+function bindTransport(tr) {
+  tr.onData = bytes => { app.stats.bytes += bytes.length; app.parser.feed(bytes); };
+  tr.onClose = () => {
+    if (tr instanceof WebSerialTransport) void recoverSerialLink(tr, 'LINK DROPPED');
+    else void teardown('LINK DROPPED');
+  };
+}
+
+function transportConnected(tr, automatic = false, openStartedAt = 0) {
+  app.transport = tr;
+  app.lastFrameAt = 0;
+  app.lastHbAt = 0;
+  app.connectedAt = Date.now();
+  app.reconnectBusy = false;
+  app.reconnectStarting = false;
+  if (tr instanceof WebSerialTransport) {
+    app.lastSerial = { port: tr.port, baud: tr.baud };
+  }
+  $('btnConnect').textContent = 'Disconnect';
+  $('selTransport').disabled = $('inpBaud').disabled = true;
+  for (const type of Object.keys(app.acts)) {
+    app.acts[type].btn.disabled = false;
+    renderAct(Number(type));
+  }
+  if (automatic) {
+    app.reconnectPhase = 'verifying';
+    app.reconnectVerifying = true;
+    app.verifyStartedAt = Date.now();
+    setLinkChip('VERIFYING HEARTBEAT', 'warn');
+    const elapsed = openStartedAt ? ((Date.now() - openStartedAt) / 1000).toFixed(1) : '?';
+    logLine('rx', '--', [], `serial port reopened after ${elapsed}s; waiting for heartbeat`);
+  } else {
+    app.reconnectPhase = null;
+    app.reconnectVerifying = false;
+    app.verifyStartedAt = 0;
+    setLinkChip('CONNECTED', 'ok');
+  }
+  if (tr instanceof WebSerialTransport) tr.startReading();
+}
+
+function finishReconnectVerification() {
+  if (!app.reconnectVerifying) return;
+  const elapsed = app.verifyStartedAt ? ((Date.now() - app.verifyStartedAt) / 1000).toFixed(1) : '?';
+  app.reconnectPhase = null;
+  app.reconnectVerifying = false;
+  app.verifyStartedAt = 0;
+  setLinkChip('RECONNECTED', 'ok');
+  logLine('rx', '--', [], `heartbeat verified ${elapsed}s after serial reopen`);
+}
+
+function cancelAutoReconnect() {
+  app.reconnectToken++;
+  clearTimeout(app.reconnectTimer);
+  app.reconnectTimer = null;
+  app.reconnectBusy = false;
+  app.reconnectStarting = false;
+  app.reconnectPhase = null;
+  app.reconnectVerifying = false;
+  app.verifyStartedAt = 0;
+}
+
+function reconnectPending() {
+  return app.reconnectTimer !== null || app.reconnectBusy || app.reconnectStarting;
+}
+
+function scheduleSerialReconnect(lastHeartbeat) {
+  if (!app.lastSerial) return;
+  const token = ++app.reconnectToken;
+  const wait = Math.max(SERIAL_REOPEN_SETTLE_MS, HB_TIMEOUT_MS - (Date.now() - lastHeartbeat));
+  $('btnConnect').textContent = 'Stop retry';
+  $('selTransport').disabled = $('inpBaud').disabled = true;
+  app.reconnectPhase = 'waiting_retry';
+  setLinkChip('RECONNECTING', 'warn');
+  app.reconnectTimer = setTimeout(() => { void attemptSerialReconnect(token); }, wait);
+}
+
+async function attemptSerialReconnect(token) {
+  app.reconnectTimer = null;
+  if (token !== app.reconnectToken || app.transport?.connected || !app.lastSerial) return;
+
+  app.reconnectBusy = true;
+  app.reconnectPhase = 'opening';
+  setLinkChip('RECONNECTING', 'warn');
+  const openStartedAt = Date.now();
+  const port = app.lastSerial.port;
+  const reportedState = !('connected' in port) ? 'unknown'
+    : port.connected ? 'connected' : 'unavailable';
+  logLine('rx', '--', [], `opening previous serial port (device reports ${reportedState})`);
+  const tr = new WebSerialTransport(app.lastSerial.baud, app.lastSerial.port);
+  bindTransport(tr);
+  try {
+    await tr.connect();
+  } catch (e) {
+    try { await tr.disconnect(); } catch {}
+    if (token !== app.reconnectToken) return;
+    app.reconnectBusy = false;
+    app.reconnectPhase = 'retrying';
+    setLinkChip('RETRYING', 'warn');
+    const elapsed = ((Date.now() - openStartedAt) / 1000).toFixed(1);
+    const detail = [e?.name, e?.message].filter(Boolean).join(': ') || String(e);
+    logLine('bad', '--', [], `serial reopen failed after ${elapsed}s: ${detail}`);
+    app.reconnectTimer = setTimeout(() => { void attemptSerialReconnect(token); }, SERIAL_RETRY_MS);
+    return;
+  }
+
+  if (token !== app.reconnectToken) {
+    await tr.disconnect();
+    return;
+  }
+  transportConnected(tr, true, openStartedAt);
+}
+
+async function recoverSerialLink(tr, reason) {
+  if (app.transport !== tr || app.reconnectStarting) return;
+  const recoveryToken = ++app.reconnectToken;
+  app.reconnectStarting = true;
+  const lastHeartbeat = app.lastHbAt || app.connectedAt || Date.now();
+  const readError = tr.lastReadError;
+  const detail = readError
+    ? `: ${[readError.name, readError.message].filter(Boolean).join(': ') || String(readError)}`
+    : '';
+  logLine('bad', '--', [], `${reason}${detail}; closing serial port`);
+  await teardown(reason);
+  app.reconnectStarting = false;
+  if (recoveryToken !== app.reconnectToken) return;
+  scheduleSerialReconnect(lastHeartbeat);
+}
+
 async function connectClicked() {
-  if (app.transport?.connected) { await teardown('DISCONNECTED'); return; }
+  if (app.transport?.connected) {
+    cancelAutoReconnect();
+    await teardown('DISCONNECTED');
+    return;
+  }
+  if (reconnectPending()) {
+    cancelAutoReconnect();
+    $('btnConnect').textContent = 'Connect';
+    $('selTransport').disabled = $('inpBaud').disabled = false;
+    setLinkChip('DISCONNECTED', '');
+    return;
+  }
+  cancelAutoReconnect();
   const kind = $('selTransport').value;
   const tr = kind === 'sim' ? new SimTransport()
                             : new WebSerialTransport(Number($('inpBaud').value) || 115200);
-  tr.onData = bytes => { app.stats.bytes += bytes.length; app.parser.feed(bytes); };
-  tr.onClose = () => teardown('LINK DROPPED');
+  bindTransport(tr);
   try {
     await tr.connect();
   } catch (e) {
@@ -797,19 +1025,22 @@ async function connectClicked() {
     logLine('bad', '--', [], 'connect failed: ' + e.message);
     return;
   }
-  app.transport = tr;
-  app.lastFrameAt = 0;
-  app.lastHbAt = 0;
-  $('btnConnect').textContent = 'Disconnect';
-  $('selTransport').disabled = $('inpBaud').disabled = true;
-  for (const a of Object.values(app.acts)) a.btn.disabled = false;
-  setLinkChip('CONNECTED', 'ok');
+  transportConnected(tr);
 }
 async function teardown(reason) {
   for (const t of Object.keys(app.acts)) stopAct(Number(t));
   const tr = app.transport;
   app.transport = null;
-  try { await tr?.disconnect(); } catch {}
+  app.connectedAt = 0;
+  app.reconnectPhase = null;
+  app.reconnectVerifying = false;
+  app.verifyStartedAt = 0;
+  try {
+    await tr?.disconnect();
+  } catch (e) {
+    const detail = [e?.name, e?.message].filter(Boolean).join(': ') || String(e);
+    logLine('bad', '--', [], 'serial close failed: ' + detail);
+  }
   $('btnConnect').textContent = 'Connect';
   $('selTransport').disabled = $('inpBaud').disabled = false;
   for (const a of Object.values(app.acts)) { a.btn.disabled = true; }
@@ -832,9 +1063,18 @@ function refreshStats() {
 setInterval(() => {
   const now = Date.now();
   if (app.transport?.connected) {
-    const silent = now - app.lastFrameAt;
-    if (app.lastFrameAt && silent > 2000) setLinkChip('STALE ' + (silent / 1000).toFixed(0) + 's', 'warn');
-    else if (app.lastFrameAt) setLinkChip('LINK OK', 'ok');
+    if (app.reconnectVerifying) {
+      setLinkChip('VERIFYING HEARTBEAT', 'warn');
+    } else {
+      const silent = now - app.lastFrameAt;
+      if (app.lastFrameAt && silent > 2000) setLinkChip('STALE ' + (silent / 1000).toFixed(0) + 's', 'warn');
+      else if (app.lastFrameAt) setLinkChip('LINK OK', 'ok');
+    }
+
+    const hbSince = app.lastHbAt || app.connectedAt;
+    if (app.transport instanceof WebSerialTransport && hbSince && now - hbSince > HB_TIMEOUT_MS) {
+      void recoverSerialLink(app.transport, 'HB TIMEOUT');
+    }
   }
   const hb = $('chipHb');
   if (!app.lastHbAt) { hb.textContent = 'HB —'; hb.className = 'chip'; }

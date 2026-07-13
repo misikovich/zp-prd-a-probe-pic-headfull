@@ -61,10 +61,13 @@
 
     ACT types (WP_ACT_*) are both command and state. The probe reports
     each ACT value periodically like any other measurement (1 = test
-    active, 0 = idle). To start or stop a test, the client keeps
-    sending the desired ACT value until the ACT state reported by the
-    probe becomes that value (level-triggered and idempotent, so lost
-    frames need no ACK and duplicates are harmless).
+    active, 0 = idle). Unless documented otherwise, the client keeps
+    sending the desired ACT value until the reported state converges
+    (level-triggered and idempotent, so lost frames need no ACK and
+    duplicates are harmless). WP_ACT_FPGA_TEST is a one-shot exception:
+    command 1 queues one upload, command 0 is ignored, and duplicate 1
+    commands are ignored while an upload is queued or loading. Its
+    reported state is 1 while queued/loading and auto-clears to 0.
 
     WP_TYPE_ACK is reserved for future frames that have no observable
     state to converge on (e.g. one-shot config): the receiver echoes
@@ -107,6 +110,13 @@
 #define WP_INTERBYTE_TIMEOUT_MS 50u
 #define WP_ACK_TIMEOUT_MS       200u
 #define WP_ACK_RETRIES          3u
+
+/* WP_TYPE_FPGA_STATUS payload values. */
+#define WP_FPGA_STATUS_IDLE         0u
+#define WP_FPGA_STATUS_LOADING      1u
+#define WP_FPGA_STATUS_DONE         2u
+#define WP_FPGA_STATUS_BUS_FAILED   3u
+#define WP_FPGA_STATUS_CDONE_FAILED 4u
 
 typedef enum {
   WP_TYPE_INVALID      = 0x00, /* reserved, never transmitted */
@@ -153,10 +163,13 @@ typedef enum {
   WP_TYPE_RCD_F6MA          = 0x42, /* uint8, 0-1 bool */
   WP_TYPE_RCD_F30MA         = 0x43, /* uint8, 0-1 bool */
 
-  /* ICE40LP1K-CM36TR FPGA/Relay Testing - Activateable */
-  WP_ACT_FPGA_TEST          = 0x50, /* uint8, 0-1 bool */
+  /* iCE5LP1K-SG48 FPGA/Relay Testing - Activateable */
+  WP_ACT_FPGA_TEST          = 0x50, /* uint8: command 1 queues one upload;
+                                       0 ignored; state 1 queued/loading */
   WP_TYPE_FPGA_CDONE        = 0x51, /* uint8, 0-1 bool */
   WP_TYPE_FPGA_INT          = 0x52, /* uint8, 0-1 bool */
+  WP_TYPE_FPGA_STATUS       = 0x53, /* uint8: 0 IDLE, 1 LOADING, 2 DONE,
+                                       3 BUS_FAILED, 4 CDONE_FAILED */
 
   
   /* control, acknowledged */

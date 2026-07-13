@@ -75,6 +75,9 @@ typedef struct {
     u32 va_rms;     /* raw S.23, fraction of full scale */
     u32 vb_rms;
     u32 vc_rms;
+    u32 ia_rms;
+    u32 ib_rms;
+    u32 ic_rms;
     u32 pf_t;       /* raw S.22, total power factor */
     u32 freq;       /* raw S.16, Hz */
     u32 tempc;      /* raw S.10, degrees C, channel A */

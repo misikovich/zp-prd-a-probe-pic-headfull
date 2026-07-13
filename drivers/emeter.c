@@ -170,6 +170,9 @@ static void emeter_clear_sample(EmeterSample *sample)
     sample->va_rms = 0UL;
     sample->vb_rms = 0UL;
     sample->vc_rms = 0UL;
+    sample->ia_rms = 0UL;
+    sample->ib_rms = 0UL;
+    sample->ic_rms = 0UL;
     sample->pf_t = 0UL;
     sample->freq = 0UL;
     sample->tempc = 0UL;
@@ -184,6 +187,9 @@ static u8 emeter_sample_all_equal(const EmeterSample *sample, u32 word)
             (sample->va_rms == word) &&
             (sample->vb_rms == word) &&
             (sample->vc_rms == word) &&
+            (sample->ia_rms == word) &&
+            (sample->ib_rms == word) &&
+            (sample->ic_rms == word) &&
             (sample->pf_t == word) &&
             (sample->freq == word) &&
             (sample->tempc == word);
@@ -201,6 +207,9 @@ static u8 emeter_read_sweep(EmeterSample *sample, u32 *cycle_first)
     ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_VA_RMS, &sample->va_rms));
     ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_VB_RMS, &sample->vb_rms));
     ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_VC_RMS, &sample->vc_rms));
+    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_IA_RMS, &sample->ia_rms));
+    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_IB_RMS, &sample->ib_rms));
+    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_IC_RMS, &sample->ic_rms));
     ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_PF_T, &sample->pf_t));
     ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_FREQ, &sample->freq));
     ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_TEMPC_A, &sample->tempc));

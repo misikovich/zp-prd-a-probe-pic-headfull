@@ -7,6 +7,7 @@
 #include "esp_uart.h"
 
 #define WPROTO_MAX_REPORTERS 24u
+#define WPROTO_MAX_COMMAND_HANDLERS 8u
 #define WPROTO_TASK_STACK 320u /* 16-bit words; collect callbacks run here */
 #define WPROTO_TASK_PRIO 2u
 #define WPROTO_RX_CHUNK 32u
@@ -20,8 +21,15 @@ struct reporter {
     wproto_collect_fn collect;
 };
 
+struct command_handler {
+    u8 type;
+    wproto_command_fn handle;
+};
+
 static struct reporter reporters[WPROTO_MAX_REPORTERS];
 static u8 reporter_count;
+static struct command_handler command_handlers[WPROTO_MAX_COMMAND_HANDLERS];
+static u8 command_handler_count;
 
 static SemaphoreHandle_t tx_mutex;
 static u8 tx_frame[WP_MAX_FRAME_LEN];
@@ -68,21 +76,26 @@ static void dispatch(const u8 *frame)
     const u8 type = frame[3];
     const u8 len = frame[4];
     const u8 *value = &frame[5];
+    u8 i;
 
     if ((hdr >> 4) != WP_VERSION || (hdr & 0x0Fu) != WP_SRC_CLIENT) {
         return;
     }
 
-    switch (type) {
-    case WP_TYPE_CONNECTED:
+    if (type == WP_TYPE_CONNECTED) {
         if (len >= 1u) {
             handle_connected(value[0]);
         }
-        break;
-    /* client ACT command handlers go here as tests get wired up */
-    default:
-        break; /* unknown type with valid CRC: skip silently */
+        return;
     }
+
+    for (i = 0u; i < command_handler_count; i++) {
+        if (command_handlers[i].type == type) {
+            command_handlers[i].handle(type, value, len);
+            return;
+        }
+    }
+    /* unknown type with valid CRC: skip silently */
 }
 
 static void run_due_reporters(void)
@@ -157,6 +170,21 @@ bool wproto_add_reporter(u8 type, u16 period_ms, wproto_collect_fn collect)
     r->last = xTaskGetTickCount();
     r->collect = collect;
     reporter_count++;
+    return true;
+}
+
+bool wproto_add_command_handler(u8 type, wproto_command_fn handler)
+{
+    struct command_handler *h;
+
+    if ((handler == NULL) ||
+            (command_handler_count >= WPROTO_MAX_COMMAND_HANDLERS)) {
+        return false;
+    }
+    h = &command_handlers[command_handler_count];
+    h->type = type;
+    h->handle = handler;
+    command_handler_count++;
     return true;
 }
 

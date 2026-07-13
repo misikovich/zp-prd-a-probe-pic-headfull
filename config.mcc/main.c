@@ -7,27 +7,13 @@
 #include "task.h"
 
 #include "spi_bus.h"
-#include "emeter.h"
-#include "fpga.h"
+#include "emeter_service.h"
+#include "fpga_service.h"
 #include "rgbw.h"
 #include "wproto.h"
 /*
     Main application
 */
-
-/* WP_TYPE_EM_LINK: 0x01 link ok, 0x00 MISO stuck low, 0xFF everything else */
-static u8 collect_em_link(u8 *value)
-{
-    EmeterSample sample;
-
-    if (emeter_poll(&sample) == EMETER_ERROR_BUS_BUSY) {
-        return 0u; /* bus owned by FPGA upload: skip this cycle */
-    }
-
-    value[0] = sample.link_ok ? 0x01u
-             : (sample.error == EMETER_ERROR_ALL_ZERO) ? 0x00u : 0xFFu;
-    return 1u;
-}
 
 static void heartbeat_task(void *parameters)
 {
@@ -139,13 +125,11 @@ int main(void)
     dlog("System Initialized");
 
     spi_bus_init();
-    fpga_park();
-    emeter_init();
     rgbw_init();
     wproto_init();
+    fpga_service_init();
+    emeter_service_init();
     dlog("Drivers Initialized");
-
-    wproto_add_reporter(WP_TYPE_EM_LINK, 1000u, collect_em_link);
 
     xTaskCreate(heartbeat_task, "beat", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
     xTaskCreate(rgbw_ticker, "rgbw", configMINIMAL_STACK_SIZE, NULL, 1, NULL);

@@ -29,6 +29,7 @@
 #define WPROTO_VALUE_MAX 32u
 
 typedef u8 (*wproto_collect_fn)(u8 *value);
+typedef void (*wproto_command_fn)(u8 type, const u8 *value, u8 len);
 
 /* Init the link and start the engine task. Registers the built-in
    WP_TYPE_HEARTBEAT reporter. Call after SYSTEM_Initialize. */
@@ -37,6 +38,11 @@ void wproto_init(void);
 /* Register a periodic reporter. Returns false when the table is full.
    Call before or after wproto_init, from one task (main setup). */
 bool wproto_add_reporter(u8 type, u16 period_ms, wproto_collect_fn collect);
+
+/* Register a client-frame handler. Handlers run in the wproto task and
+   receive the validated TYPE payload. Connection events remain internal.
+   Returns false when the bounded handler table is full. */
+bool wproto_add_command_handler(u8 type, wproto_command_fn handler);
 
 /* Queue a sound on the ESP (INT_ACT_SOUND_*). Callable from any task. */
 void wproto_sound(u8 sound_type);

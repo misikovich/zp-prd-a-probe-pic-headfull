@@ -14,6 +14,8 @@
 #include "esp_gap_bt_api.h"
 #include "esp_log.h"
 #include "esp_spp_api.h"
+#include "sound.h"
+#include "wprotocol.h"
 
 #define BT_DEVICE_NAME "ZP-A-PROBE"
 #define SPP_SERVER_NAME "ZP_A_PROBE_SPP"
@@ -30,18 +32,34 @@ static void spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
     switch (event) {
     case ESP_SPP_INIT_EVT:
         if (param->init.status == ESP_SPP_SUCCESS) {
-            esp_spp_start_srv(ESP_SPP_SEC_AUTHENTICATE, ESP_SPP_ROLE_SLAVE, 0, SPP_SERVER_NAME);
+            esp_err_t err = esp_spp_start_srv(
+                ESP_SPP_SEC_AUTHENTICATE, ESP_SPP_ROLE_SLAVE, 0, SPP_SERVER_NAME);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "SPP server start request failed: %s", esp_err_to_name(err));
+                sound_request(INT_ACT_SOUND_ERR);
+            }
         } else {
             ESP_LOGE(TAG, "SPP init failed: %d", param->init.status);
+            sound_request(INT_ACT_SOUND_ERR);
         }
         break;
     case ESP_SPP_START_EVT:
         if (param->start.status == ESP_SPP_SUCCESS) {
-            esp_bt_gap_set_device_name(BT_DEVICE_NAME);
-            esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
-            ESP_LOGI(TAG, "SPP server started as \"%s\"", BT_DEVICE_NAME);
+            esp_err_t name_err = esp_bt_gap_set_device_name(BT_DEVICE_NAME);
+            esp_err_t scan_err = esp_bt_gap_set_scan_mode(
+                ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+
+            if (name_err == ESP_OK && scan_err == ESP_OK) {
+                ESP_LOGI(TAG, "SPP server started as \"%s\"", BT_DEVICE_NAME);
+                sound_request(INT_ACT_SOUND_OK); /* BT server active */
+            } else {
+                ESP_LOGE(TAG, "BT activation failed: name=%s scan=%s",
+                    esp_err_to_name(name_err), esp_err_to_name(scan_err));
+                sound_request(INT_ACT_SOUND_ERR);
+            }
         } else {
             ESP_LOGE(TAG, "SPP server start failed: %d", param->start.status);
+            sound_request(INT_ACT_SOUND_ERR);
         }
         break;
     case ESP_SPP_SRV_OPEN_EVT:
