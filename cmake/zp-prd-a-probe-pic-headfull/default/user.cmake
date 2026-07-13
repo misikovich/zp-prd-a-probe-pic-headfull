@@ -10,13 +10,15 @@ set(zp_rtos_dir "${CMAKE_CURRENT_LIST_DIR}/../../../rtos")
 
 set(zp_drivers_dir "${CMAKE_CURRENT_LIST_DIR}/../../../drivers")
 set(zp_config_mcc_dir "${CMAKE_CURRENT_LIST_DIR}/../../../config.mcc")
+set(zp_protocol_dir "${CMAKE_CURRENT_LIST_DIR}/../../../protocol")
 
 set(zp_freertos_includes
     "${zp_freertos_dir}/include"
     "${zp_freertos_dir}/portable/MPLAB/PIC24_dsPIC"
     "${zp_rtos_dir}"
     "${zp_drivers_dir}"
-    "${zp_config_mcc_dir}")
+    "${zp_config_mcc_dir}"
+    "${zp_protocol_dir}")
 
 # C sources join the generated compile object library so they get the same
 # flags as the rest of the firmware.
@@ -33,7 +35,9 @@ target_sources(zp_prd_a_probe_pic_headfull_default_toolchain_XC16_2_10_compile P
     "${zp_drivers_dir}/spi_bus.c"
     "${zp_drivers_dir}/emeter.c"
     "${zp_drivers_dir}/fpga.c"
-    "${zp_drivers_dir}/rgbw.c")
+    "${zp_drivers_dir}/rgbw.c"
+    "${zp_drivers_dir}/esp_uart.c"
+    "${zp_drivers_dir}/wproto.c")
 target_include_directories(zp_prd_a_probe_pic_headfull_default_toolchain_XC16_2_10_compile
     PRIVATE ${zp_freertos_includes})
 

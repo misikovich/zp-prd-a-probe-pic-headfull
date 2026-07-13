@@ -53,7 +53,7 @@
             "files": [
                 {
                     "include": "**/*",
-                    "exclude": "**/@(build|_build|out|cmake|.vscode|third_party|rtos|drivers)/**/*"
+                    "exclude": "**/@(build|_build|out|cmake|.vscode|third_party|rtos|drivers|ESP)/**/*"
                 },
                 "config.mcc/mcc_generated_files/system/src/dmt.c",
                 "config.mcc/mcc_generated_files/system/src/dmt_asm.s",

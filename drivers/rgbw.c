@@ -25,7 +25,7 @@
 #define LED_MAX_B           80u
 #define LED_MAX_W           80u
 
-#define RGBW_TPS 30
+#define RGBW_TPS 60
 static inline void rgbw_hold_cycle(void) {
     vTaskDelay(pdMS_TO_TICKS(1000u / RGBW_TPS));
 }
@@ -113,17 +113,20 @@ void rgbw_hold_transition(RGBW_STATE s, u32 d_ms) {
  *    hard cut. Squaring makes luminance track f^2, so perceived brightness is
  *    ~linear in time and the fade actually looks like a fade. One multiply,
  *    no lookup table. */
-static u16 rgbw_scale(u8 raw, u16 max) {
-    u32 g = ((u32)raw * raw) / 255u;   /* gamma 2.0: 0..255 -> 0..255 */
-    return (u16)((g * max) / 255u);
+static u16 rgbw_scale_counts(u8 raw, u16 max) {
+    /* full precision straight to counts: quantizing back through the
+       0..255 duty domain would collapse dim fades (e.g. w=55 under
+       gamma+ceiling) to a handful of visible levels */
+    u32 max_counts = ((u32)max * LED_PWM_PERIOD_COUNTS) / 255u;
+    return (u16)(((u32)raw * raw * max_counts) / 65025u);
 }
 
 /* push the current raw state out to the four PWM channels */
 static void rgbw_apply(void) {
-    rgbw_set_r(rgbw_scale(rgbw_current.r, LED_MAX_R));
-    rgbw_set_g(rgbw_scale(rgbw_current.g, LED_MAX_G));
-    rgbw_set_b(rgbw_scale(rgbw_current.b, LED_MAX_B));
-    rgbw_set_w(rgbw_scale(rgbw_current.w, LED_MAX_W));
+    PWM_LEDR_DutyCycleSet(rgbw_scale_counts(rgbw_current.r, LED_MAX_R));
+    PWM_LEDG_DutyCycleSet(rgbw_scale_counts(rgbw_current.g, LED_MAX_G));
+    PWM_LEDB_DutyCycleSet(rgbw_scale_counts(rgbw_current.b, LED_MAX_B));
+    PWM_LEDW_DutyCycleSet(rgbw_scale_counts(rgbw_current.w, LED_MAX_W));
 }
 
 /* move one channel toward target by 1/steps of the remaining delta.

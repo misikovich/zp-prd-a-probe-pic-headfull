@@ -1,10 +1,10 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
 
-An MPLAB/XC16 embedded firmware project for the **dsPIC33CK256MP506** (Product A probe: wireless connectivity + client). Firmware entry code lives in `main.c`. A browser-side client stub lives in `client/` (`client/zp-logdatapanel.html`); it has no build pipeline — edit the HTML directly.
+An MPLAB/XC16 embedded firmware project for the **dsPIC33CK256MP506** (Product A probe: wireless connectivity + client). Firmware entry code lives in `main.c`. The v1 probe/client wire format is defined in `protocol/wprotocol.h`. A browser-side diagnosis and data-logging client lives in `client/zp-logdatapanel.html`.
 
 Related project context: `/home/ss1/Projects/zp-test-probe-dspic/AGENTS.md` — read when borrowing patterns from that project, but keep changes scoped here.
 
@@ -26,6 +26,10 @@ In VS Code, `Ctrl+Shift+B` runs the "build" task (configure + ninja). Output goe
 
 There is no test suite; a clean XC16 build is the minimum validation for firmware changes. Behavior changes should be tested on target hardware when possible.
 
+The client has no build pipeline. Open `client/zp-logdatapanel.html` in Chrome or Edge desktop and use its Simulator transport for development without hardware. Use Web Serial with the ESP bridge exposed as a Bluetooth serial port for hardware testing.
+
+The ESP bridge firmware is a PlatformIO/ESP-IDF project: `pio run -e esp-wrover-kit` in `ESP/a-esp-middleman/` builds it, `-t upload` flashes, `pio device monitor` shows logs.
+
 ## Layout and generated files
 
 - `_build/` — CMake build tree; disposable, ignored.
@@ -33,7 +37,12 @@ There is no test suite; a clean XC16 build is the minimum validation for firmwar
 - `out/` — final build artifacts, ignored.
 - `.vscode/zp-prd-a-probe-pic-headfull.mplab.json` — the MPLAB project file (device, DFP pack `dsPIC33CK-MP_DFP`, toolchain XC16 2.10). Do not delete; keep aligned with the selected device/toolchain.
 - `config.mcc/` — MPLAB Code Configurator (MCC) configuration.
-- `protocol/` — currently empty; intended for probe/client protocol definitions.
+- `protocol/wprotocol.h` — source of truth for wireless protocol v1: frame format, receiver and reliability rules, constants, payload type IDs, sizes, and scaling. Frames use `A5 5A`, a version/source header, type, length, payload, and little-endian CRC-16/CCITT-FALSE. Multi-byte payload fields are little-endian.
+- `protocol/wprotocol.c` — shared firmware-side protocol helpers (`wp_crc16`, `wp_frame_build`, the `wp_rx` streaming receiver), compiled by both the XC16 build and the ESP build.
+- `drivers/esp_uart.c` — ESP-link transport: UART2 @ 115200, interrupt-driven RX (`_U2RXInterrupt` at priority 1 feeding a stream buffer), polled TX.
+- `drivers/wproto.c` — wireless protocol engine task: parses inbound frames (handles `WP_TYPE_CONNECTED` by commanding connect/disconnect sounds on the ESP) and streams periodic reporters. To add a reading, write a collect function and call `wproto_add_reporter(type, period_ms, collect)` — see `collect_em_link` in `config.mcc/main.c`.
+- `client/zp-logdatapanel.html` — single-file HTML/CSS/JavaScript diagnosis client. It implements the v1 streaming parser, CRC/frame generation, data cards and charts, ACT controls, Web Serial transport, and a simulated probe transport.
+- `ESP/a-esp-middleman/` — PlatformIO/ESP-IDF firmware for the ESP32 middleman: Bluetooth Classic SPP bridge (device name `ZP-A-PROBE`) plus buzzer sound emitter. Forwards the wprotocol stream both ways but consumes valid `WP_SRC_PICESP` frames (`INT_ACT_SOUND_*` buzzer commands) instead of forwarding them; the pure-logic filter lives in `src/frame_filter.c`. Reports BT client connect/disconnect to the PIC (`WP_TYPE_CONNECTED`, sent with src `WP_SRC_CLIENT`); reacting — e.g. commanding a connect sound back — is the PIC's job, the ESP takes no action of its own. UART1 to the PIC: 115200, RX GPIO25, TX GPIO26. Excluded from the MPLAB fileSet glob so XC16 doesn't compile it.
 - `third_party/FreeRTOS-Kernel/` — vendored FreeRTOS kernel V11.2.0 (unmodified subset; see its `README-vendored.md`).
 - `rtos/` — dsPIC33C FreeRTOS port (`rtos/port/`), `FreeRTOSConfig.h`, and hooks. The RTOS tick owns **Timer1**; keep Timer1 out of MCC. ISRs that call `...FromISR()` APIs must run at interrupt priority 1.
 - FreeRTOS sources are wired into the build via `cmake/zp-prd-a-probe-pic-headfull/default/user.cmake` (not the MPLAB fileSet — `third_party/` and `rtos/` are excluded from its glob to avoid double compilation).
@@ -45,4 +54,5 @@ Do not commit generated MPLAB/CMake/build artifacts.
 - C for XC16: fixed-width types from `<stdint.h>`, `static` for file-local helpers, simple control flow, 4-space indentation.
 - lower_snake_case for functions/variables, UPPERCASE for macros/constants.
 - As the firmware grows, put hardware setup in focused C modules rather than expanding `main.c`.
-- Client files: plain HTML/CSS/JavaScript until a framework is introduced.
+- Client files: plain HTML/CSS/JavaScript until a framework is introduced; keep the client single-file unless that decision changes explicitly.
+- Protocol constants and payload metadata duplicated in `client/zp-logdatapanel.html` (`WP`, `TY`, and `TYPES`) must stay synchronized with `protocol/wprotocol.h`. Update and validate both sides whenever a frame constant, type ID, payload representation, scale, or reliability rule changes.

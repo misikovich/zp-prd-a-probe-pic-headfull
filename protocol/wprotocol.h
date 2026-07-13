@@ -1,6 +1,8 @@
 #ifndef WPROTOCOL_H
 #define WPROTOCOL_H
 
+#include <stdint.h>
+
 /*
     WIRELESS DATA TRANSFER PROTOCOL (v1)
 
@@ -9,8 +11,17 @@
 
         PIC <-*UART*-> ESP <-*BT*-> Client Diagnosis Device
 
-    The ESP is a transparent bridge: it forwards bytes in both directions
-    without processing, to minimize complexity and points of failure.
+    The ESP forwards client -> PIC bytes untouched. In the PIC -> client
+    direction it parses the stream: valid frames whose HDR source is
+    WP_SRC_PICESP are addressed to the ESP itself (sound commands); the
+    ESP consumes them and they never appear on the BT link. Every other
+    byte — other frames, and bytes that fail frame parsing (bad CRC,
+    interbyte timeout, garbage) — is forwarded to BT exactly once, so
+    the bridge stays transparent and the client parser resynchronizes
+    with its usual rules. The ESP also injects WP_TYPE_CONNECTED frames
+    (src WP_SRC_CLIENT) into the UART stream to tell the PIC when the
+    BT client session opens or closes; the PIC reacts by commanding the
+    connect/disconnect sounds back (the ESP never acts on its own).
 
     FRAME FORMAT
     ------------
@@ -81,7 +92,9 @@
 
 /* HDR = (WP_VERSION << 4) | WP_SRC_x */
 #define WP_SRC_PROBE            0x1u    /* PIC -> client */
-#define WP_SRC_CLIENT           0x2u    /* client -> PIC */
+#define WP_SRC_CLIENT           0x2u    /* PIC <- client */
+#define WP_SRC_ESPPIC           0x3u    /* ESP -> PIC, not transmitted */
+#define WP_SRC_PICESP           0x4u    /* ESP <- PIC, not transmitted */
 
 #define WP_MAX_VALUE_LEN        255u
 #define WP_OVERHEAD_LEN         7u      /* SOF(2) + HDR + TYPE + LEN + CRC(2) */
@@ -149,8 +162,60 @@ typedef enum {
   /* control, acknowledged */
   WP_TYPE_ACK          = 0xF0, /* uint8: TYPE being acknowledged */
   WP_TYPE_ERROR        = 0xF1, /* uint8: error code */
-  WP_TYPE_HEARTBEAT    = 0xFF  /* uint8: CC */
+  WP_TYPE_HEARTBEAT    = 0xFF, /* uint8: CC */
+
+  /* Internal ESP -> PIC status, sent over UART with src WP_SRC_CLIENT so
+     the PIC parses one inbound source; never appears on the BT link.
+     Fire-and-forget: the UART link is wired, no ACK. */
+  WP_TYPE_CONNECTED       = 0xE0, /* uint8, 0-1 bool: BT client session
+                                     open; sent on connect/disconnect */
+
+  /* Internal PIC-ESP communication (src WP_SRC_PICESP), consumed by the
+     ESP and never forwarded over BT. LEN = 0: the TYPE byte alone is the
+     command; the ESP ignores VALUE, so a payload can be added later
+     without breaking older ESP firmware. Fire-and-forget, no ACK. */
+  INT_ACT_SOUND_GENERIC   = 0xE1, /* single generic beep */
+  INT_ACT_SOUND_DOUBLE    = 0xE2, /* double generic beep */
+  INT_ACT_SOUND_TRIPLE    = 0xE3, /* triple generic beep */
+  INT_ACT_SOUND_SWITCH    = 0xE4, /* page-switch tick */
+  INT_ACT_SOUND_OK        = 0xE5, /* ok/confirm beep */
+  INT_ACT_SOUND_ERR       = 0xE6, /* error beep */
+  INT_ACT_SOUND_STARTUP   = 0xE7, /* startup melody */
+  INT_ACT_SOUND_CONNECT   = 0xE8, /* rising two-tone; PIC typically sends
+                                     it on WP_TYPE_CONNECTED = 1 */
+  INT_ACT_SOUND_DISCONNECT = 0xE9, /* falling two-tone; PIC typically sends
+                                      it on WP_TYPE_CONNECTED = 0 */
+
 } wp_type_t;
 
+/* CRC-16/CCITT-FALSE over HDR, TYPE, LEN and VALUE (see FRAME FORMAT).
+   Implemented in wprotocol.c, shared by the PIC and ESP builds. */
+uint16_t wp_crc16(const uint8_t *data, uint16_t len);
+
+/* Build a v1 frame into out, which must hold WP_OVERHEAD_LEN + len bytes.
+   value may be NULL when len is 0. Returns the total frame length. */
+uint16_t wp_frame_build(uint8_t *out, uint8_t src, uint8_t type,
+                        const uint8_t *value, uint8_t len);
+
+/* Streaming receiver implementing the RECEIVER RULES above for an end
+   receiver (invalid bytes are discarded; the ESP bridge keeps its own
+   forwarding filter). Feed bytes one at a time; when wp_rx_feed returns
+   true, frame[] holds a complete CRC-valid frame:
+
+       frame[2] = HDR, frame[3] = TYPE, frame[4] = LEN, &frame[5] = VALUE
+
+   The frame is consumed by the next feed. On CRC mismatch the receiver
+   resynchronizes on the next SOF inside the bytes already collected, so
+   a real frame that started inside a false one is recovered. The caller
+   owns the interbyte timeout: call wp_rx_reset when more than
+   WP_INTERBYTE_TIMEOUT_MS passes mid-frame. */
+typedef struct {
+    uint8_t frame[WP_MAX_FRAME_LEN];
+    uint16_t len;       /* bytes currently buffered */
+    uint16_t emit;      /* completed frame length, 0 = none */
+} wp_rx_t;
+
+void wp_rx_reset(wp_rx_t *rx);
+uint8_t wp_rx_feed(wp_rx_t *rx, uint8_t byte); /* 1 = frame ready, else 0 */
 
 #endif
