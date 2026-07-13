@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZP Product A — Probe Log/Data Panel</title>
+<!--
+  Client stat/diagnosis page for the Product A probe.
+  Protocol constants mirror protocol/wprotocol.h (v1) — keep in sync.
+
+  Transports:
+    - Web Serial (ESP bridge paired as a BT serial port; Chrome/Edge desktop)
+    - Simulator  (fake probe for developing this page without hardware)
+
+  Single file by design: plain HTML/CSS/JS, no build step.
+-->
+<style>
+  :root {
+    --bg: #0e1318;
+    --panel: #161d25;
+    --panel-2: #1b242e;
+    --border: #263140;
+    --text: #d7dee6;
+    --muted: #8595a6;
+    --accent: #5cc8ff;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --err: #f87171;
+    --chart-v: #5cc8ff;
+    --chart-i: #fbbf24;
+    --chart-x: #c084fc;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  /* ---- header ---- */
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 600; letter-spacing: .3px; }
+  header h1 small { color: var(--muted); font-weight: 400; }
+  .ctl { display: flex; gap: 8px; align-items: center; }
+  select, input[type=number] {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font: inherit;
+  }
+  input[type=number] { width: 90px; font-family: var(--mono); }
+  button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #17384d; border-color: #2c5a77; }
+  button:disabled { opacity: .45; cursor: default; }
+
+  .chip {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font: 12px/1.5 var(--mono); border: 1px solid var(--border); color: var(--muted);
+    background: var(--panel-2); white-space: nowrap;
+  }
+  .chip.ok   { color: var(--ok);   border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .chip.err  { color: var(--err);  border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+
+  #stats { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  #stats .chip b { color: var(--text); font-weight: 600; }
+
+  /* ---- layout ---- */
+  main { display: grid; grid-template-columns: minmax(0,1fr) 470px; gap: 14px; padding: 14px 16px; }
+  @media (max-width: 1150px) { main { grid-template-columns: 1fr; } }
+
+  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; align-content: start; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; min-width: 0;
+  }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 {
+    font-size: 13px; margin: 0 0 10px; font-weight: 600; letter-spacing: .4px;
+    text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .card h2 .spacer { flex: 1; }
+  .row {
+    display: flex; align-items: baseline; gap: 8px; padding: 3px 0;
+    border-bottom: 1px dashed color-mix(in srgb, var(--border) 55%, transparent);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .lbl { color: var(--muted); flex: 1; min-width: 0; }
+  .row .val { font-family: var(--mono); font-size: 13px; }
+  .row .val.stale { color: var(--muted); }
+  .unit { color: var(--muted); font-size: 11px; margin-left: 3px; }
+
+  .chartblock { margin-top: 8px; }
+  .chartblock .chead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; color: var(--muted); padding: 2px 1px;
+  }
+  .chartblock .chead .cv { font-family: var(--mono); color: var(--text); }
+  .chartblock canvas { width: 100%; height: 64px; display: block; background: var(--panel-2); border-radius: 6px; }
+
+  /* ---- frame log ---- */
+  #logpanel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    display: flex; flex-direction: column; min-height: 300px;
+    max-height: calc(100vh - 92px); position: sticky; top: 64px;
+  }
+  @media (max-width: 1150px) { #logpanel { position: static; max-height: 420px; } }
+  #logpanel .lhead {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  #logpanel .lhead h2 { font-size: 13px; margin: 0; text-transform: uppercase; color: var(--muted); letter-spacing: .4px; flex: 1; }
+  #log {
+    flex: 1; overflow-y: auto; padding: 8px 10px;
+    font: 11.5px/1.6 var(--mono); white-space: nowrap;
+  }
+  #log .fl { overflow: hidden; text-overflow: ellipsis; }
+  #log .t   { color: var(--muted); }
+  #log .rx  { color: var(--ok); }
+  #log .tx  { color: var(--accent); }
+  #log .bad { color: var(--err); }
+  #log .hex { color: #6d7d8e; }
+  #log .dec { color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ZP&nbsp;Product&nbsp;A <small>probe log/data panel</small></h1>
+  <div class="ctl">
+    <select id="selTransport" title="Transport">
+      <option value="serial">Web Serial</option>
+      <option value="sim">Simulator</option>
+    </select>
+    <input id="inpBaud" type="number" value="115200" title="Baud rate (Web Serial)">
+    <button id="btnConnect" class="primary">Connect</button>
+  </div>
+  <span class="chip" id="chipLink">DISCONNECTED</span>
+  <span class="chip" id="chipHb">HB —</span>
+  <div id="stats">
+    <span class="chip">RX <b id="stRx">0</b></span>
+    <span class="chip">TX <b id="stTx">0</b></span>
+    <span class="chip">CRC err <b id="stCrc">0</b></span>
+    <span class="chip">Ver err <b id="stVer">0</b></span>
+    <span class="chip">bytes <b id="stBytes">0</b></span>
+  </div>
+</header>
+
+<main>
+  <section id="cards"></section>
+  <section id="logpanel">
+    <div class="lhead">
+      <h2>Frame log</h2>
+      <button id="btnPause">Pause</button>
+      <button id="btnClear">Clear</button>
+    </div>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+'use strict';
+
+/* =====================================================================
+ * Protocol constants — mirror of protocol/wprotocol.h (v1)
+ * ===================================================================== */
+const WP = {
+  SOF1: 0xA5, SOF2: 0x5A,
+  VERSION: 1,
+  SRC_PROBE: 0x1, SRC_CLIENT: 0x2,
+  MAX_VALUE_LEN: 255, OVERHEAD_LEN: 7,
+  BUFFER_LOG_SIZE: 5,
+  CRC_INIT: 0xFFFF, CRC_POLY: 0x1021,
+  INTERBYTE_TIMEOUT_MS: 50,
+  HEARTBEAT_VALUE: 0xCC,
+};
+
+const TY = {
+  TEMP_AMBIENT_ADC: 0x01, TEMP_SOCKET_ADC: 0x02, TEMP_RCD_ADC: 0x03, PWR_HWID_ADC: 0x04,
+  EM_LINK: 0x10, EM_VA: 0x11, EM_VB: 0x12, EM_VC: 0x13, EM_IA: 0x14, EM_IB: 0x15,
+  EM_IMAX: 0x16, EM_FWVER: 0x17, EM_DRDY: 0x18, EM_FHZ: 0x19, EM_WARN: 0x1A,
+  EM_ERR: 0x1B, EM_TEMP: 0x1C, EM_INTERRUPT: 0x1D, EM_ALARM: 0x1E,
+  ACT_SRV_TEST: 0x20, SRV_POS_ADC: 0x21, SRV_CURR_ADC: 0x22, SRV_STATE: 0x23,
+  GRID_NGND_ADC: 0x31, GRID_L1L2_ADC: 0x32,
+  ACT_RCD_TEST: 0x40, RCD_ERR: 0x41, RCD_F6MA: 0x42, RCD_F30MA: 0x43,
+  ACT_FPGA_TEST: 0x50, FPGA_CDONE: 0x51, FPGA_INT: 0x52,
+  ACK: 0xF0, ERROR: 0xF1, HEARTBEAT: 0xFF,
+};
+
+/* kind: u8 | u16 | u16arr | hex | bool | enum
+ * bool meta: onLbl/offLbl + onCls (chip class when ON)          */
+const TYPES = {
+  [TY.TEMP_AMBIENT_ADC]: { name: 'TEMP_AMBIENT_ADC', lbl: 'Ambient temp',  kind: 'u16', unit: 'ADC' },
+  [TY.TEMP_SOCKET_ADC]:  { name: 'TEMP_SOCKET_ADC',  lbl: 'Socket temp',   kind: 'u16', unit: 'ADC' },
+  [TY.TEMP_RCD_ADC]:     { name: 'TEMP_RCD_ADC',     lbl: 'RCD temp',      kind: 'u16', unit: 'ADC' },
+  [TY.PWR_HWID_ADC]:     { name: 'PWR_HWID_ADC',     lbl: 'HWID power',    kind: 'u16', unit: 'ADC' },
+
+  [TY.EM_LINK]:  { name: 'EM_LINK', lbl: 'Link', kind: 'enum',
+                   map: { 0x01: ['OK', 'ok'], 0x00: ['ALL-0', 'err'], 0xFF: ['ALL-F', 'err'] } },
+  [TY.EM_VA]:    { name: 'EM_VA',   lbl: 'V phase A', kind: 'u16arr', color: 'var(--chart-v)' },
+  [TY.EM_VB]:    { name: 'EM_VB',   lbl: 'V phase B', kind: 'u16arr', color: 'var(--chart-v)' },
+  [TY.EM_VC]:    { name: 'EM_VC',   lbl: 'V phase C', kind: 'u16arr', color: 'var(--chart-v)' },
+  [TY.EM_IA]:    { name: 'EM_IA',   lbl: 'I phase A', kind: 'u16arr', color: 'var(--chart-i)' },
+  [TY.EM_IB]:    { name: 'EM_IB',   lbl: 'I phase B', kind: 'u16arr', color: 'var(--chart-i)' },
+  [TY.EM_IMAX]:  { name: 'EM_IMAX', lbl: 'I max',     kind: 'u16arr', color: 'var(--chart-x)' },
+  [TY.EM_FWVER]: { name: 'EM_FWVER', lbl: 'Firmware', kind: 'hex' },
+  [TY.EM_DRDY]:  { name: 'EM_DRDY',  lbl: 'Data ready', kind: 'bool', onLbl: 'RDY', offLbl: '—', onCls: 'ok' },
+  [TY.EM_FHZ]:   { name: 'EM_FHZ',   lbl: 'Line freq',  kind: 'u16', scale: 0.01, dec: 2, unit: 'Hz' },
+  [TY.EM_WARN]:  { name: 'EM_WARN',  lbl: 'Warnings',   kind: 'hex' },
+  [TY.EM_ERR]:   { name: 'EM_ERR',   lbl: 'Errors',     kind: 'hex' },
+  [TY.EM_TEMP]:  { name: 'EM_TEMP',  lbl: 'Die temp',   kind: 'u16', unit: 'raw' },
+  [TY.EM_INTERRUPT]: { name: 'EM_INTERRUPT', lbl: 'Interrupt', kind: 'bool', onLbl: 'IRQ', offLbl: '—', onCls: 'warn' },
+  [TY.EM_ALARM]:     { name: 'EM_ALARM',     lbl: 'Alarm',     kind: 'bool', onLbl: 'ALARM', offLbl: '—', onCls: 'err' },
+
+  [TY.ACT_SRV_TEST]: { name: 'ACT_SRV_TEST', lbl: 'Servo test', kind: 'bool', act: true },
+  [TY.SRV_POS_ADC]:  { name: 'SRV_POS_ADC',  lbl: 'Position',   kind: 'u16arr', color: 'var(--chart-v)' },
+  [TY.SRV_CURR_ADC]: { name: 'SRV_CURR_ADC', lbl: 'Current',    kind: 'u16arr', color: 'var(--chart-i)' },
+  [TY.SRV_STATE]:    { name: 'SRV_STATE', lbl: 'State', kind: 'enum',
+                       map: { 0xFF: ['STOP', ''], 0x01: ['LOCKING', 'warn'], 0x02: ['UNLOCKING', 'warn'] } },
+
+  [TY.GRID_NGND_ADC]: { name: 'GRID_NGND_ADC', lbl: 'N–GND',  kind: 'u16', unit: 'ADC' },
+  [TY.GRID_L1L2_ADC]: { name: 'GRID_L1L2_ADC', lbl: 'L1–L2',  kind: 'u16', unit: 'ADC' },
+
+  [TY.ACT_RCD_TEST]: { name: 'ACT_RCD_TEST', lbl: 'RCD test', kind: 'bool', act: true },
+  [TY.RCD_ERR]:      { name: 'RCD_ERR',   lbl: 'Error',      kind: 'bool', onLbl: 'ERR',  offLbl: '—', onCls: 'err' },
+  [TY.RCD_F6MA]:     { name: 'RCD_F6MA',  lbl: 'Trip 6 mA',  kind: 'bool', onLbl: 'TRIP', offLbl: '—', onCls: 'ok' },
+  [TY.RCD_F30MA]:    { name: 'RCD_F30MA', lbl: 'Trip 30 mA', kind: 'bool', onLbl: 'TRIP', offLbl: '—', onCls: 'ok' },
+
+  [TY.ACT_FPGA_TEST]: { name: 'ACT_FPGA_TEST', lbl: 'FPGA test', kind: 'bool', act: true },
+  [TY.FPGA_CDONE]:    { name: 'FPGA_CDONE', lbl: 'CDONE', kind: 'bool', onLbl: 'HIGH', offLbl: 'LOW', onCls: 'ok' },
+  [TY.FPGA_INT]:      { name: 'FPGA_INT',   lbl: 'INT',   kind: 'bool', onLbl: 'HIGH', offLbl: 'LOW', onCls: 'warn' },
+
+  [TY.ACK]:       { name: 'ACK',       lbl: 'Ack',       kind: 'u8', ctl: true },
+  [TY.ERROR]:     { name: 'ERROR',     lbl: 'Error',     kind: 'hex', ctl: true },
+  [TY.HEARTBEAT]: { name: 'HEARTBEAT', lbl: 'Heartbeat', kind: 'hex', ctl: true },
+};
+
+const GROUPS = [
+  { title: 'Generic sensors', types: [TY.TEMP_AMBIENT_ADC, TY.TEMP_SOCKET_ADC, TY.TEMP_RCD_ADC, TY.PWR_HWID_ADC] },
+  { title: 'Grid detect', types: [TY.GRID_NGND_ADC, TY.GRID_L1L2_ADC] },
+  { title: 'RCD — benvac RDC121', act: TY.ACT_RCD_TEST, types: [TY.RCD_ERR, TY.RCD_F6MA, TY.RCD_F30MA] },
+  { title: 'FPGA — iCE40LP1K', act: TY.ACT_FPGA_TEST, types: [TY.FPGA_CDONE, TY.FPGA_INT] },
+  { title: 'Servo', act: TY.ACT_SRV_TEST, types: [TY.SRV_STATE], charts: [TY.SRV_POS_ADC, TY.SRV_CURR_ADC] },
+  { title: 'EMeter — MAX78615+PPM/C01', wide: true,
+    types: [TY.EM_LINK, TY.EM_FWVER, TY.EM_DRDY, TY.EM_FHZ, TY.EM_WARN, TY.EM_ERR,
+            TY.EM_TEMP, TY.EM_INTERRUPT, TY.EM_ALARM],
+    charts: [TY.EM_VA, TY.EM_VB, TY.EM_VC, TY.EM_IA, TY.EM_IB, TY.EM_IMAX] },
+];
+
+/* =====================================================================
+ * CRC-16/CCITT-FALSE + frame building/parsing
+ * ===================================================================== */
+function crc16(bytes, start, end) {
+  let crc = WP.CRC_INIT;
+  for (let i = start; i < end; i++) {
+    crc ^= bytes[i] << 8;
+    for (let b = 0; b < 8; b++) {
+      crc = crc & 0x8000 ? ((crc << 1) ^ WP.CRC_POLY) & 0xFFFF : (crc << 1) & 0xFFFF;
+    }
+  }
+  return crc;
+}
+
+function buildFrame(src, type, value) {
+  const len = value.length;
+  const f = new Uint8Array(WP.OVERHEAD_LEN + len);
+  f[0] = WP.SOF1; f[1] = WP.SOF2;
+  f[2] = (WP.VERSION << 4) | src;
+  f[3] = type; f[4] = len;
+  f.set(value, 5);
+  const crc = crc16(f, 2, 5 + len);
+  f[5 + len] = crc & 0xFF;
+  f[6 + len] = crc >> 8;
+  return f;
+}
+
+/* Streaming parser implementing the receiver rules from wprotocol.h:
+ * scan for SOF, verify CRC, on mismatch resume one byte after SOF1,
+ * drop a stalled partial frame after INTERBYTE_TIMEOUT_MS.           */
+class FrameParser {
+  constructor() {
+    this.buf = [];
+    this.lastByteAt = 0;
+    this.onFrame = null;   // ({hdr, type, value:number[], raw:number[]})
+    this.onCrcError = null;
+  }
+  feed(bytes) {
+    const now = performance.now();
+    if (this.buf.length && now - this.lastByteAt > WP.INTERBYTE_TIMEOUT_MS) this.buf.length = 0;
+    this.lastByteAt = now;
+    for (const b of bytes) this.buf.push(b);
+    this._scan();
+  }
+  _scan() {
+    const buf = this.buf;
+    let i = 0;
+    for (;;) {
+      while (i < buf.length && buf[i] !== WP.SOF1) i++;
+      if (i + 1 >= buf.length) break;               // no SOF (or SOF1 is last byte)
+      if (buf[i + 1] !== WP.SOF2) { i++; continue; }
+      if (buf.length - i < 5) break;                // header not complete yet
+      const len = buf[i + 4];
+      const total = WP.OVERHEAD_LEN + len;
+      if (buf.length - i < total) break;            // frame not complete yet
+      const rxCrc = buf[i + 5 + len] | (buf[i + 6 + len] << 8);
+      if (crc16(buf, i + 2, i + 5 + len) === rxCrc) {
+        this.onFrame?.({
+          hdr: buf[i + 2], type: buf[i + 3],
+          value: buf.slice(i + 5, i + 5 + len),
+          raw: buf.slice(i, i + total),
+        });
+        i += total;
+      } else {
+        this.onCrcError?.();
+        i += 1;                                     // resume just past SOF1
+      }
+    }
+    this.buf = buf.slice(i);
+  }
+}
+
+/* =====================================================================
+ * Transports — common interface so the link layer can be swapped later
+ * (Web Serial today; BLE or WebSocket would subclass Transport too).
+ * ===================================================================== */
+class Transport {
+  constructor() {
+    this.connected = false;
+    this.onData = null;        // (Uint8Array) RX bytes
+    this.onClose = null;       // link dropped (device side)
+  }
+  async connect() { throw new Error('not implemented'); }
+  async disconnect() {}
+  async write(_bytes) { throw new Error('not implemented'); }
+}
+
+class WebSerialTransport extends Transport {
+  constructor(baud) { super(); this.baud = baud; this.port = null; this.reader = null; }
+  async connect() {
+    this.port = await navigator.serial.requestPort();
+    await this.port.open({ baudRate: this.baud });
+    this.connected = true;
+    this._readLoop();
+  }
+  async _readLoop() {
+    try {
+      while (this.connected && this.port.readable) {
+        this.reader = this.port.readable.getReader();
+        try {
+          for (;;) {
+            const { value, done } = await this.reader.read();
+            if (done) break;
+            if (value?.length) this.onData?.(value);
+          }
+        } finally {
+          this.reader.releaseLock();
+          this.reader = null;
+        }
+      }
+    } catch (e) {
+      /* device unplugged / read error */
+    }
+    if (this.connected) { this.connected = false; this.onClose?.(); }
+  }
+  async write(bytes) {
+    const w = this.port.writable.getWriter();
+    try { await w.write(bytes); } finally { w.releaseLock(); }
+  }
+  async disconnect() {
+    this.connected = false;
+    try { await this.reader?.cancel(); } catch {}
+    try { await this.port?.close(); } catch {}
+    this.port = null;
+  }
+}
+
+/* Fake probe: emits plausible frames through the real parser and
+ * honours ACT convergence (applies a client ACT value after a delay,
+ * auto-clears it when the simulated test finishes).                  */
+class SimTransport extends Transport {
+  constructor() {
+    super();
+    this.timers = [];
+    this.t = 0;                                    // waveform phase
+    this.act = { [TY.ACT_SRV_TEST]: 0, [TY.ACT_RCD_TEST]: 0, [TY.ACT_FPGA_TEST]: 0 };
+    this.actSince = {};
+    this.rxParser = new FrameParser();
+    this.rxParser.onFrame = f => this._onClientFrame(f);
+  }
+  async connect() {
+    this.connected = true;
+    const every = (ms, fn) => this.timers.push(setInterval(fn, ms));
+    every(500, () => this._emit(TY.HEARTBEAT, [WP.HEARTBEAT_VALUE]));
+    every(1000, () => this._slowTelemetry());
+    every(200, () => this._fastTelemetry());
+    every(15000, () => this._corruptFrame());
+  }
+  async disconnect() {
+    this.connected = false;
+    this.timers.forEach(clearInterval);
+    this.timers = [];
+  }
+  async write(bytes) { this.rxParser.feed(bytes); }
+
+  _emit(type, value) {
+    if (this.connected) this.onData?.(buildFrame(WP.SRC_PROBE, type, value));
+  }
+  _onClientFrame(f) {
+    if ((f.hdr & 0x0F) !== WP.SRC_CLIENT) return;
+    if (f.type in this.act && f.value.length === 1) {
+      setTimeout(() => {                           // firmware reaction latency
+        if (this.act[f.type] !== f.value[0]) {
+          this.act[f.type] = f.value[0];
+          this.actSince[f.type] = Date.now();
+        }
+      }, 350);
+    }
+  }
+  _u16(v) { v = Math.max(0, Math.min(65535, Math.round(v))); return [v & 0xFF, v >> 8]; }
+  _arr(fn) {
+    const out = [];
+    for (let k = 0; k < WP.BUFFER_LOG_SIZE; k++) out.push(...this._u16(fn(this.t + k * 0.09)));
+    return out;
+  }
+  _slowTelemetry() {
+    const n = a => (Math.random() - 0.5) * a;
+    this._emit(TY.TEMP_AMBIENT_ADC, this._u16(21000 + n(300)));
+    this._emit(TY.TEMP_SOCKET_ADC, this._u16(24500 + n(300)));
+    this._emit(TY.TEMP_RCD_ADC, this._u16(22800 + n(300)));
+    this._emit(TY.PWR_HWID_ADC, this._u16(31200 + n(100)));
+    this._emit(TY.GRID_NGND_ADC, this._u16(1800 + n(200)));
+    this._emit(TY.GRID_L1L2_ADC, this._u16(43000 + n(500)));
+    this._emit(TY.EM_LINK, [0x01]);
+    this._emit(TY.EM_FWVER, [0x04, 0xFC, 0x08]);
+    this._emit(TY.EM_DRDY, [1]);
+    this._emit(TY.EM_FHZ, this._u16(5000 + n(6)));
+    this._emit(TY.EM_WARN, [0]);
+    this._emit(TY.EM_ERR, [0]);
+    this._emit(TY.EM_TEMP, this._u16(26200 + n(150)));
+    this._emit(TY.EM_INTERRUPT, [0]);
+    this._emit(TY.EM_ALARM, [0]);
+    for (const [type, since] of Object.entries(this.actSince)) {
+      if (this.act[type] === 1 && Date.now() - since > 6000) {  // test run finished
+        this.act[type] = 0;
+        delete this.actSince[type];
+      }
+    }
+    this._emit(TY.RCD_ERR, [0]);
+    const rcdT = this.act[TY.ACT_RCD_TEST] ? Date.now() - this.actSince[TY.ACT_RCD_TEST] : 0;
+    this._emit(TY.RCD_F6MA, [rcdT > 1500 ? 1 : 0]);
+    this._emit(TY.RCD_F30MA, [rcdT > 3500 ? 1 : 0]);
+    this._emit(TY.FPGA_CDONE, [1]);
+    this._emit(TY.FPGA_INT, [this.act[TY.ACT_FPGA_TEST] ? (Date.now() >> 9) & 1 : 0]);
+  }
+  _fastTelemetry() {
+    this.t += WP.BUFFER_LOG_SIZE * 0.09;
+    const s = (t, ph, amp, mid) => mid + amp * Math.sin(t * 2 * Math.PI + ph);
+    this._emit(TY.EM_VA, this._arr(t => s(t, 0, 17000, 32768)));
+    this._emit(TY.EM_VB, this._arr(t => s(t, 2.09, 17000, 32768)));
+    this._emit(TY.EM_VC, this._arr(t => s(t, 4.19, 17000, 32768)));
+    this._emit(TY.EM_IA, this._arr(t => s(t, 0.3, 4000, 32768)));
+    this._emit(TY.EM_IB, this._arr(t => s(t, 2.4, 3600, 32768)));
+    this._emit(TY.EM_IMAX, this._arr(t => 36900 + 300 * Math.sin(t * 0.7)));
+    for (const type of [TY.ACT_SRV_TEST, TY.ACT_RCD_TEST, TY.ACT_FPGA_TEST]) {
+      this._emit(type, [this.act[type]]);
+    }
+    if (this.act[TY.ACT_SRV_TEST]) {
+      const el = (Date.now() - this.actSince[TY.ACT_SRV_TEST]) / 1000;
+      const phase = el % 6;
+      this._emit(TY.SRV_STATE, [phase < 2.5 ? 0x01 : phase < 3 ? 0xFF : 0x02]);
+      this._emit(TY.SRV_POS_ADC, this._arr(t => 32768 + 26000 * Math.sin(el * 1.05)));
+      this._emit(TY.SRV_CURR_ADC, this._arr(t => 6000 + 2500 * Math.abs(Math.sin(t * 3)) + Math.random() * 600));
+    } else {
+      this._emit(TY.SRV_STATE, [0xFF]);
+    }
+  }
+  _corruptFrame() {
+    if (!this.connected) return;
+    const f = buildFrame(WP.SRC_PROBE, TY.EM_FHZ, this._u16(5000));
+    f[5] ^= 0x40;                                  // damage payload, keep old CRC
+    this.onData?.(f);
+  }
+}
+
+/* =====================================================================
+ * App state
+ * ===================================================================== */
+const app = {
+  transport: null,
+  parser: new FrameParser(),
+  latest: {},                    // type -> {v, ts}
+  charts: {},                    // type -> StripChart
+  rows: {},                      // type -> {valEl, meta}
+  stats: { rx: 0, tx: 0, crc: 0, ver: 0, bytes: 0 },
+  lastFrameAt: 0,
+  lastHbAt: 0,
+  acts: {},                      // type -> {desired, timer, tries, btn, stateEl}
+  logPaused: false,
+};
+
+const $ = id => document.getElementById(id);
+const hex = b => b.toString(16).toUpperCase().padStart(2, '0');
+const hexs = a => Array.from(a, hex).join(' ');
+
+/* ---- decode / format ---- */
+function decodeValue(meta, bytes) {
+  switch (meta.kind) {
+    case 'u8': case 'bool': case 'enum':
+      return bytes.length >= 1 ? bytes[0] : null;
+    case 'u16':
+      return bytes.length >= 2 ? bytes[0] | (bytes[1] << 8) : null;
+    case 'u16arr': {
+      const out = [];
+      for (let i = 0; i + 1 < bytes.length; i += 2) out.push(bytes[i] | (bytes[i + 1] << 8));
+      return out;
+    }
+    case 'hex':
+      return hexs(bytes);
+    default:
+      return null;
+  }
+}
+function formatValue(meta, v) {
+  if (v === null || v === undefined) return '—';
+  switch (meta.kind) {
+    case 'u16':
+      return meta.scale ? (v * meta.scale).toFixed(meta.dec ?? 2) : String(v);
+    case 'bool':
+      return v ? (meta.onLbl ?? 'ON') : (meta.offLbl ?? 'OFF');
+    case 'enum':
+      return meta.map?.[v]?.[0] ?? ('0x' + hex(v));
+    case 'u16arr':
+      return v.length ? String(v[v.length - 1]) : '—';
+    default:
+      return String(v);
+  }
+}
+
+/* ---- strip chart ---- */
+class StripChart {
+  constructor(canvas, cssColor) {
+    this.canvas = canvas;
+    this.color = cssColor;
+    this.data = [];
+    this.cap = 360;
+    this.dirty = true;
+  }
+  push(samples) {
+    for (const v of samples) {
+      this.data.push(v);
+      if (this.data.length > this.cap) this.data.shift();
+    }
+    this.dirty = true;
+  }
+  draw() {
+    const c = this.canvas, dpr = devicePixelRatio || 1;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (!w) return;
+    if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
+    const g = c.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const d = this.data;
+    if (d.length < 2) return;
+    let mn = Infinity, mx = -Infinity;
+    for (const v of d) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    if (mx - mn < 1) { mn -= 1; mx += 1; }
+    const pad = (mx - mn) * 0.08;
+    mn -= pad; mx += pad;
+    g.strokeStyle = 'rgba(140,160,180,0.12)';
+    g.lineWidth = 1;
+    g.beginPath();
+    for (const f of [0.25, 0.5, 0.75]) { g.moveTo(0, h * f); g.lineTo(w, h * f); }
+    g.stroke();
+    g.strokeStyle = this.color;
+    g.lineWidth = 1.5;
+    g.beginPath();
+    for (let i = 0; i < d.length; i++) {
+      const x = (i / (this.cap - 1)) * w;
+      const y = h - ((d[i] - mn) / (mx - mn)) * h;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.stroke();
+    this.dirty = false;
+  }
+}
+function chartLoop() {
+  for (const ch of Object.values(app.charts)) if (ch.dirty) ch.draw();
+  requestAnimationFrame(chartLoop);
+}
+
+/* ---- build the cards from GROUPS/TYPES ---- */
+function resolveColor(v) {
+  return v.startsWith('var(')
+    ? getComputedStyle(document.documentElement).getPropertyValue(v.slice(4, -1)).trim()
+    : v;
+}
+function buildCards() {
+  const root = $('cards');
+  for (const grp of GROUPS) {
+    const card = document.createElement('div');
+    card.className = 'card' + (grp.wide ? ' wide' : '');
+    const h = document.createElement('h2');
+    h.textContent = grp.title;
+    card.appendChild(h);
+
+    if (grp.act !== undefined) {
+      const meta = TYPES[grp.act];
+      const sp = document.createElement('span'); sp.className = 'spacer';
+      const state = document.createElement('span'); state.className = 'chip'; state.textContent = 'IDLE';
+      const btn = document.createElement('button'); btn.textContent = 'Run test'; btn.disabled = true;
+      btn.onclick = () => actToggle(grp.act);
+      h.append(sp, state, btn);
+      app.acts[grp.act] = { desired: null, timer: null, tries: 0, failed: false, btn, stateEl: state };
+      app.rows[grp.act] = { meta };                // value tracked, rendered via the header chip
+    }
+
+    for (const t of grp.types) {
+      const meta = TYPES[t];
+      const row = document.createElement('div'); row.className = 'row';
+      const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = meta.lbl;
+      lbl.title = meta.name + ' (0x' + hex(t) + ')';
+      const val = document.createElement('span');
+      if (meta.kind === 'bool' || meta.kind === 'enum') {
+        val.className = 'chip'; val.textContent = '—';
+      } else {
+        val.className = 'val stale'; val.textContent = '—';
+      }
+      row.append(lbl, val);
+      if (meta.unit && meta.kind !== 'bool' && meta.kind !== 'enum') {
+        const u = document.createElement('span'); u.className = 'unit'; u.textContent = meta.unit;
+        row.appendChild(u);
+      }
+      card.appendChild(row);
+      app.rows[t] = { valEl: val, meta };
+    }
+
+    for (const t of grp.charts ?? []) {
+      const meta = TYPES[t];
+      const blk = document.createElement('div'); blk.className = 'chartblock';
+      const head = document.createElement('div'); head.className = 'chead';
+      const nm = document.createElement('span'); nm.textContent = meta.lbl;
+      nm.title = meta.name + ' (0x' + hex(t) + ')';
+      const cv = document.createElement('span'); cv.className = 'cv'; cv.textContent = '—';
+      head.append(nm, cv);
+      const canvas = document.createElement('canvas');
+      blk.append(head, canvas);
+      card.appendChild(blk);
+      app.charts[t] = new StripChart(canvas, resolveColor(meta.color ?? 'var(--accent)'));
+      app.rows[t] = { valEl: cv, meta };
+    }
+    root.appendChild(card);
+  }
+}
+
+/* ---- frame log ---- */
+function logLine(cls, dir, raw, decoded) {
+  const el = document.createElement('div');
+  el.className = 'fl';
+  const now = new Date();
+  const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+  let hx = hexs(raw.slice(0, 20));
+  if (raw.length > 20) hx += ' …';
+  el.innerHTML = `<span class="t">${ts}</span> <span class="${cls}">${dir}</span> ` +
+                 `<span class="hex">${hx}</span> <span class="dec"></span>`;
+  el.querySelector('.dec').textContent = decoded;
+  const log = $('log');
+  const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  log.appendChild(el);
+  while (log.childNodes.length > 400) log.removeChild(log.firstChild);
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+function describeFrame(type, meta, v) {
+  const name = meta?.name ?? ('TYPE 0x' + hex(type) + ' (unknown)');
+  if (meta?.kind === 'u16arr' && Array.isArray(v)) return `${name}[${v.length}] = [${v.join(', ')}]`;
+  return `${name} = ${formatValue(meta ?? { kind: 'hex' }, v)}` +
+         (meta?.unit ? ' ' + meta.unit : '');
+}
+
+/* ---- RX handling ---- */
+function onFrame(f) {
+  app.stats.rx++;
+  app.lastFrameAt = Date.now();
+  if ((f.hdr >> 4) !== WP.VERSION) {
+    app.stats.ver++;
+    logLine('bad', 'RX', f.raw, `version ${f.hdr >> 4} frame dropped`);
+    refreshStats();
+    return;
+  }
+  const meta = TYPES[f.type];
+  const v = meta ? decodeValue(meta, f.value) : hexs(f.value);
+  if (!app.logPaused) logLine('rx', 'RX', f.raw, describeFrame(f.type, meta, v));
+  if (!meta) { refreshStats(); return; }
+
+  app.latest[f.type] = { v, ts: Date.now() };
+  if (f.type === TY.HEARTBEAT) app.lastHbAt = Date.now();
+
+  const row = app.rows[f.type];
+  if (row?.valEl) {
+    row.valEl.textContent = formatValue(meta, v);
+    row.valEl.classList.remove('stale');
+    if (meta.kind === 'bool') {
+      row.valEl.className = 'chip ' + (v ? (meta.onCls ?? 'ok') : '');
+    } else if (meta.kind === 'enum') {
+      row.valEl.className = 'chip ' + (meta.map?.[v]?.[1] ?? '');
+    }
+  }
+  if (meta.kind === 'u16arr') app.charts[f.type]?.push(v);
+  if (meta.act) renderAct(f.type);
+  refreshStats();
+}
+
+/* ---- ACT control: resend desired value until probe state converges ---- */
+function actToggle(type) {
+  const a = app.acts[type];
+  if (a.timer) { stopAct(type); renderAct(type); return; }   // cancel pending
+  const cur = app.latest[type]?.v ?? 0;
+  a.desired = cur ? 0 : 1;
+  a.tries = 0;
+  a.failed = false;
+  sendAct(type, a.desired);
+  a.timer = setInterval(() => {
+    if (app.latest[type]?.v === a.desired) { stopAct(type); renderAct(type); return; }
+    if (++a.tries > 25) {                                    // ~5 s without convergence
+      const want = a.desired;
+      stopAct(type);
+      a.failed = ((app.latest[type]?.v ?? 0) !== want);
+      renderAct(type);
+      return;
+    }
+    sendAct(type, a.desired);
+  }, 200);
+  renderAct(type);
+}
+function stopAct(type) {
+  const a = app.acts[type];
+  if (a?.timer) { clearInterval(a.timer); a.timer = null; }
+  if (a) a.desired = null;
+}
+function sendAct(type, val) {
+  txFrame(type, [val]);
+}
+function renderAct(type) {
+  const a = app.acts[type];
+  if (!a) return;
+  const v = app.latest[type]?.v ?? 0;
+  if (a.timer) {
+    a.stateEl.textContent = 'PENDING → ' + a.desired;
+    a.stateEl.className = 'chip warn';
+    a.btn.textContent = 'Cancel';
+  } else if (a.failed) {
+    a.stateEl.textContent = 'NO CONVERGE';
+    a.stateEl.className = 'chip err';
+    a.btn.textContent = v ? 'Stop test' : 'Run test';
+  } else {
+    a.stateEl.textContent = v ? 'ACTIVE' : 'IDLE';
+    a.stateEl.className = 'chip ' + (v ? 'ok' : '');
+    a.btn.textContent = v ? 'Stop test' : 'Run test';
+  }
+}
+
+/* ---- TX ---- */
+async function txFrame(type, value) {
+  if (!app.transport?.connected) return;
+  const f = buildFrame(WP.SRC_CLIENT, type, value);
+  try {
+    await app.transport.write(f);
+    app.stats.tx++;
+    if (!app.logPaused) {
+      logLine('tx', 'TX', Array.from(f), describeFrame(type, TYPES[type], decodeValue(TYPES[type], Array.from(value))));
+    }
+    refreshStats();
+  } catch (e) {
+    logLine('bad', 'TX', Array.from(f), 'write failed: ' + e.message);
+  }
+}
+
+/* ---- connection ---- */
+async function connectClicked() {
+  if (app.transport?.connected) { await teardown('DISCONNECTED'); return; }
+  const kind = $('selTransport').value;
+  const tr = kind === 'sim' ? new SimTransport()
+                            : new WebSerialTransport(Number($('inpBaud').value) || 115200);
+  tr.onData = bytes => { app.stats.bytes += bytes.length; app.parser.feed(bytes); };
+  tr.onClose = () => teardown('LINK DROPPED');
+  try {
+    await tr.connect();
+  } catch (e) {
+    setLinkChip('CONNECT FAILED', 'err');
+    logLine('bad', '--', [], 'connect failed: ' + e.message);
+    return;
+  }
+  app.transport = tr;
+  app.lastFrameAt = 0;
+  app.lastHbAt = 0;
+  $('btnConnect').textContent = 'Disconnect';
+  $('selTransport').disabled = $('inpBaud').disabled = true;
+  for (const a of Object.values(app.acts)) a.btn.disabled = false;
+  setLinkChip('CONNECTED', 'ok');
+}
+async function teardown(reason) {
+  for (const t of Object.keys(app.acts)) stopAct(Number(t));
+  const tr = app.transport;
+  app.transport = null;
+  try { await tr?.disconnect(); } catch {}
+  $('btnConnect').textContent = 'Connect';
+  $('selTransport').disabled = $('inpBaud').disabled = false;
+  for (const a of Object.values(app.acts)) { a.btn.disabled = true; }
+  setLinkChip(reason, reason === 'DISCONNECTED' ? '' : 'err');
+}
+function setLinkChip(txt, cls) {
+  const c = $('chipLink');
+  c.textContent = txt;
+  c.className = 'chip ' + (cls ?? '');
+}
+
+/* ---- stats + liveness ---- */
+function refreshStats() {
+  $('stRx').textContent = app.stats.rx;
+  $('stTx').textContent = app.stats.tx;
+  $('stCrc').textContent = app.stats.crc;
+  $('stVer').textContent = app.stats.ver;
+  $('stBytes').textContent = app.stats.bytes;
+}
+setInterval(() => {
+  const now = Date.now();
+  if (app.transport?.connected) {
+    const silent = now - app.lastFrameAt;
+    if (app.lastFrameAt && silent > 2000) setLinkChip('STALE ' + (silent / 1000).toFixed(0) + 's', 'warn');
+    else if (app.lastFrameAt) setLinkChip('LINK OK', 'ok');
+  }
+  const hb = $('chipHb');
+  if (!app.lastHbAt) { hb.textContent = 'HB —'; hb.className = 'chip'; }
+  else {
+    const age = (now - app.lastHbAt) / 1000;
+    hb.textContent = 'HB ' + age.toFixed(1) + 's';
+    hb.className = 'chip ' + (age < 1.5 ? 'ok' : 'err');
+  }
+}, 300);
+
+/* ---- boot ---- */
+buildCards();
+chartLoop();
+refreshStats();
+
+app.parser.onFrame = onFrame;
+app.parser.onCrcError = () => {
+  app.stats.crc++;
+  logLine('bad', 'RX', [], 'CRC mismatch — frame dropped, resyncing');
+  refreshStats();
+};
+
+$('btnConnect').onclick = connectClicked;
+$('btnPause').onclick = () => {
+  app.logPaused = !app.logPaused;
+  $('btnPause').textContent = app.logPaused ? 'Resume' : 'Pause';
+};
+$('btnClear').onclick = () => { $('log').textContent = ''; };
+
+if (!('serial' in navigator)) {
+  $('selTransport').value = 'sim';
+  $('selTransport').querySelector('option[value=serial]').disabled = true;
+  logLine('bad', '--', [], 'Web Serial not available in this browser — Simulator only (use Chrome/Edge desktop for hardware)');
+}
+</script>
+</body>
+</html>

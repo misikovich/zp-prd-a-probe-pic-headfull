@@ -46,8 +46,17 @@
     RELIABILITY
     -----------
     The link is fire-and-forget for periodic measurements (a lost sample
-    is superseded by the next one). Frames that must not be lost
-    (commands, config) are acknowledged: the receiver echoes
+    is superseded by the next one).
+
+    ACT types (WP_ACT_*) are both command and state. The probe reports
+    each ACT value periodically like any other measurement (1 = test
+    active, 0 = idle). To start or stop a test, the client keeps
+    sending the desired ACT value until the ACT state reported by the
+    probe becomes that value (level-triggered and idempotent, so lost
+    frames need no ACK and duplicates are harmless).
+
+    WP_TYPE_ACK is reserved for future frames that have no observable
+    state to converge on (e.g. one-shot config): the receiver echoes
     WP_TYPE_ACK carrying the TYPE byte it accepted; the sender retries
     up to 3 times on a WP_ACK_TIMEOUT_MS timeout.
 
@@ -66,6 +75,7 @@
 
 #define WP_SOF1                 0xA5u
 #define WP_SOF2                 0x5Au
+#define WP_HEARTBEAT_VALUE      0xCCu
 
 #define WP_VERSION              1u
 
@@ -76,6 +86,7 @@
 #define WP_MAX_VALUE_LEN        255u
 #define WP_OVERHEAD_LEN         7u      /* SOF(2) + HDR + TYPE + LEN + CRC(2) */
 #define WP_MAX_FRAME_LEN        (WP_OVERHEAD_LEN + WP_MAX_VALUE_LEN)
+#define WP_BUFFER_LOG_SIZE      5u      /* capture 5 samples per frame for graphed values */
 
 #define WP_CRC_INIT             0xFFFFu
 #define WP_CRC_POLY             0x1021u
@@ -88,35 +99,51 @@ typedef enum {
   WP_TYPE_INVALID      = 0x00, /* reserved, never transmitted */
 
   /* measurements, probe -> client, fire-and-forget */
-  WP_TYPE_TEMP_AMBIENT_ADC  = 0x01, /* int16, 0-65536 */
-  WP_TYPE_TEMP_SOCKET_ADC   = 0x02, /* int16, 0-65536 */
-  WP_TYPE_TEMP_RCD_ADC      = 0x03, /* int16, 0-65536 */
-  WP_TYPE_PWR_HWID_ADC      = 0x04, /* int16, 0-65536 */
+  /* Activateable - ACT command can be sent to perform a test action */
+
+  /* Generic Sensors */
+  WP_TYPE_TEMP_AMBIENT_ADC  = 0x01, /* uint16, 0-65535 */
+  WP_TYPE_TEMP_SOCKET_ADC   = 0x02, /* uint16, 0-65535 */
+  WP_TYPE_TEMP_RCD_ADC      = 0x03, /* uint16, 0-65535 */
+  WP_TYPE_PWR_HWID_ADC      = 0x04, /* uint16, 0-65535 */
+
+  /* MAX78615+PPM/C01 EMeter */
   WP_TYPE_EM_LINK           = 0x10, /* uint8, states: 00 - all zero, FF - all F, 01 - ok */
   WP_TYPE_EM_VA             = 0x11, /* uint16[buffer_log_size], array */
   WP_TYPE_EM_VB             = 0x12, /* uint16[buffer_log_size], array */
   WP_TYPE_EM_VC             = 0x13, /* uint16[buffer_log_size], array */
   WP_TYPE_EM_IA             = 0x14, /* uint16[buffer_log_size], array */
   WP_TYPE_EM_IB             = 0x15, /* uint16[buffer_log_size], array */
-  WP_TYPE_EM_IC             = 0x16, /* uint16[buffer_log_size], array */
+  WP_TYPE_EM_IMAX           = 0x16, /* uint16[buffer_log_size], array */
   WP_TYPE_EM_FWVER          = 0x17, /* uint8[3], 3 bytes 04FC08 */
   WP_TYPE_EM_DRDY           = 0x18, /* uint8, 0-1 bool */
   WP_TYPE_EM_FHZ            = 0x19, /* uint16, 0.01 hz/LSB */
   WP_TYPE_EM_WARN           = 0x1A, /* uint8 */
   WP_TYPE_EM_ERR            = 0x1B, /* uint8 */
-  WP_TYPE_EM_TEMP           = 0x1C, /* uint16, 0-65565 */
-  WP_TYPE_EM_INT            = 0x1D, /* uint8, 0-1 bool */
+  WP_TYPE_EM_TEMP           = 0x1C, /* uint16, 0-65535 */
+  WP_TYPE_EM_INTERRUPT      = 0x1D, /* uint8, 0-1 bool */
   WP_TYPE_EM_ALARM          = 0x1E, /* uint8, 0-1 bool */
+
+  /* Motor/Servo - Activateable */
+  WP_ACT_SRV_TEST           = 0x20, /* uint8, 0-1 bool */
   WP_TYPE_SRV_POS_ADC       = 0x21, /* uint16[buffer_log_size], array */
   WP_TYPE_SRV_CURR_ADC      = 0x22, /* uint16[buffer_log_size], array */
   WP_TYPE_SRV_STATE         = 0x23, /* uint8, states: FF - stop, 01 - locking, 02 - unlocking */
-  WP_TYPE_GRID_NGND_ADC     = 0x31, /* uint16, 0-65565 */
-  WP_TYPE_GRID_L1L2_ADC     = 0x32, /* uint16, 0-65565 */
+
+  /* Grid Detect Voltages*/
+  WP_TYPE_GRID_NGND_ADC     = 0x31, /* uint16, 0-65535 */
+  WP_TYPE_GRID_L1L2_ADC     = 0x32, /* uint16, 0-65535 */
+
+  /* benvac RDC121 RCD Testing - Activateable */
+  WP_ACT_RCD_TEST           = 0x40, /* uint8, 0-1 bool */
   WP_TYPE_RCD_ERR           = 0x41, /* uint8, 0-1 bool */
   WP_TYPE_RCD_F6MA          = 0x42, /* uint8, 0-1 bool */
   WP_TYPE_RCD_F30MA         = 0x43, /* uint8, 0-1 bool */
+
+  /* ICE40LP1K-CM36TR FPGA/Relay Testing - Activateable */
+  WP_ACT_FPGA_TEST          = 0x50, /* uint8, 0-1 bool */
   WP_TYPE_FPGA_CDONE        = 0x51, /* uint8, 0-1 bool */
-  WP_TYPE_FPGA_INT          = 0x51, /* uint8, 0-1 bool */
+  WP_TYPE_FPGA_INT          = 0x52, /* uint8, 0-1 bool */
 
   
   /* control, acknowledged */
