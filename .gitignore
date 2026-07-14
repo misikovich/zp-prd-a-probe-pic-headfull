@@ -1,6 +1,7 @@
 .generated_files/
 .cache
 .claude
+.agents
 build/
 dist/
 nbproject/
