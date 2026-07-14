@@ -118,6 +118,17 @@
 #define WP_FPGA_STATUS_BUS_FAILED   3u
 #define WP_FPGA_STATUS_CDONE_FAILED 4u
 
+/* WP_TYPE_RCD_STATUS payload values. */
+#define WP_RCD_STATUS_IDLE             0u
+#define WP_RCD_STATUS_RUNNING          1u
+#define WP_RCD_STATUS_PASS             2u
+#define WP_RCD_STATUS_INITIAL_FAULT    3u
+#define WP_RCD_STATUS_F6_TIMEOUT       4u
+#define WP_RCD_STATUS_F30_TIMEOUT      5u
+#define WP_RCD_STATUS_RECOVERY_TIMEOUT 6u
+#define WP_RCD_STATUS_SENSOR_ERROR     7u
+#define WP_RCD_STATUS_SEQUENCE_FAILED  8u
+
 typedef enum {
   WP_TYPE_INVALID      = 0x00, /* reserved, never transmitted */
 
@@ -157,11 +168,13 @@ typedef enum {
   WP_TYPE_GRID_NGND_ADC     = 0x31, /* uint16, 0-65535 */
   WP_TYPE_GRID_L1L2_ADC     = 0x32, /* uint16, 0-65535 */
 
-  /* benvac RDC121 RCD Testing - Activateable */
-  WP_ACT_RCD_TEST           = 0x40, /* uint8, 0-1 bool */
-  WP_TYPE_RCD_ERR           = 0x41, /* uint8, 0-1 bool */
-  WP_TYPE_RCD_F6MA          = 0x42, /* uint8, 0-1 bool */
-  WP_TYPE_RCD_F30MA         = 0x43, /* uint8, 0-1 bool */
+  /* benvac RCMB121-1 RCD Testing - Activateable */
+  WP_ACT_RCD_TEST           = 0x40, /* uint8: command 1 queues one self-test;
+                                       0 ignored; state 1 queued/running */
+  WP_TYPE_RCD_ERR           = 0x41, /* uint8, logical error assertion */
+  WP_TYPE_RCD_F6MA          = 0x42, /* uint8, raw pin: 1 = trip asserted */
+  WP_TYPE_RCD_F30MA         = 0x43, /* uint8, raw pin: 1 = trip asserted */
+  WP_TYPE_RCD_STATUS        = 0x44, /* uint8: WP_RCD_STATUS_* */
 
   /* iCE5LP1K-SG48 FPGA/Relay Testing - Activateable */
   WP_ACT_FPGA_TEST          = 0x50, /* uint8: command 1 queues one upload;

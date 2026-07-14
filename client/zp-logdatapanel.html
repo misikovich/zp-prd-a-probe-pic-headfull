@@ -88,7 +88,23 @@
   main { display: grid; grid-template-columns: minmax(0,1fr) 470px; gap: 14px; padding: 14px 16px; }
   @media (max-width: 1150px) { main { grid-template-columns: 1fr; } }
 
-  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; align-content: start; }
+  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; align-content: start; position: relative; }
+
+  /* link lost: dark cover fading in over the readings */
+  #linklost {
+    position: absolute; inset: -6px; z-index: 5; border-radius: 10px;
+    display: flex; flex-direction: column; align-items: center;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .5s ease, visibility .5s;
+  }
+  #linklost.show { opacity: 1; visibility: visible; pointer-events: auto; }
+  @keyframes linklostpulse { 50% { opacity: .45; } }
+  #linklost span {
+    position: sticky; top: 48vh;   /* stay near viewport center when scrolled */
+    font: 600 15px/1 var(--mono); letter-spacing: 4px; color: var(--warn);
+    animation: linklostpulse 1.6s ease-in-out infinite;
+  }
   .card {
     background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
     padding: 12px 14px; min-width: 0;
@@ -167,7 +183,9 @@
 </header>
 
 <main>
-  <section id="cards"></section>
+  <section id="cards">
+    <div id="linklost"><span>RECONNECTING…</span></div>
+  </section>
   <section id="logpanel">
     <div class="lhead">
       <h2>Frame log</h2>
@@ -202,20 +220,27 @@ const TY = {
   EM_ERR: 0x1B, EM_TEMP: 0x1C, EM_INTERRUPT: 0x1D, EM_ALARM: 0x1E,
   ACT_SRV_TEST: 0x20, SRV_POS_ADC: 0x21, SRV_CURR_ADC: 0x22, SRV_STATE: 0x23,
   GRID_NGND_ADC: 0x31, GRID_L1L2_ADC: 0x32,
-  ACT_RCD_TEST: 0x40, RCD_ERR: 0x41, RCD_F6MA: 0x42, RCD_F30MA: 0x43,
+  ACT_RCD_TEST: 0x40, RCD_ERR: 0x41, RCD_F6MA: 0x42, RCD_F30MA: 0x43, RCD_STATUS: 0x44,
   ACT_FPGA_TEST: 0x50, FPGA_CDONE: 0x51, FPGA_INT: 0x52, FPGA_STATUS: 0x53,
   ACK: 0xF0, ERROR: 0xF1, HEARTBEAT: 0xFF,
 };
 
-/* kind: u8 | u16 | u16arr | hex | bool | enum | cdegc
+/* kind: u8 | u16 | u16arr | hex | bool | enum | cdegc | adctemp | adcv | gridv
  * bool meta: onLbl/offLbl + onCls (chip class when ON)
  * alert(v): true when the decoded value is out of range / unexpected —
  *           adds the .alert wave to the value element                  */
+const ADC_VOLTS = 0.000810;                          // counts -> volts
+const adcVolts = v => v * ADC_VOLTS;
+const adcDegC = v => (adcVolts(v) - 0.5) / 0.010;    // 500 mV offset, 10 mV/°C
+const GRID_OFFSET_V = 1.65;                          // op-amp mid-rail (3.3 V ref)
+const gridVolts = (v, gain) => (adcVolts(v) - GRID_OFFSET_V) / gain;
+const tempOutOfRange = v => { const c = adcDegC(v); return c < 10 || c > 40; };
+
 const TYPES = {
   [TY.TEMP_AMBIENT_ADC]: { name: 'TEMP_AMBIENT_ADC', lbl: 'Ambient temp',  kind: 'u16', unit: 'ADC' },
-  [TY.TEMP_SOCKET_ADC]:  { name: 'TEMP_SOCKET_ADC',  lbl: 'Socket temp',   kind: 'u16', unit: 'ADC' },
-  [TY.TEMP_RCD_ADC]:     { name: 'TEMP_RCD_ADC',     lbl: 'RCD temp',      kind: 'u16', unit: 'ADC' },
-  [TY.PWR_HWID_ADC]:     { name: 'PWR_HWID_ADC',     lbl: 'HWID power',    kind: 'u16', unit: 'ADC' },
+  [TY.TEMP_SOCKET_ADC]:  { name: 'TEMP_SOCKET_ADC',  lbl: 'Socket temp',   kind: 'adctemp', alert: tempOutOfRange },
+  [TY.TEMP_RCD_ADC]:     { name: 'TEMP_RCD_ADC',     lbl: 'RCD temp',      kind: 'adctemp', alert: tempOutOfRange },
+  [TY.PWR_HWID_ADC]:     { name: 'PWR_HWID_ADC',     lbl: 'HWID power',    kind: 'adcv' },
 
   [TY.EM_LINK]:  { name: 'EM_LINK', lbl: 'Link', kind: 'enum',
                    map: { 0x01: ['OK', 'ok'], 0x00: ['ALL-0', 'err'], 0xFF: ['ALL-F', 'err'] } },
@@ -245,15 +270,24 @@ const TYPES = {
   [TY.SRV_STATE]:    { name: 'SRV_STATE', lbl: 'State', kind: 'enum',
                        map: { 0xFF: ['STOP', ''], 0x01: ['LOCKING', 'warn'], 0x02: ['UNLOCKING', 'warn'] } },
 
-  [TY.GRID_NGND_ADC]: { name: 'GRID_NGND_ADC', lbl: 'N–GND',  kind: 'u16', unit: 'ADC' },
-  [TY.GRID_L1L2_ADC]: { name: 'GRID_L1L2_ADC', lbl: 'L1–L2',  kind: 'u16', unit: 'ADC' },
+  /* staged resistors from the grid into op-amps; ADC = grid_V * gain + 1.65 */
+  [TY.GRID_NGND_ADC]: { name: 'GRID_NGND_ADC', lbl: 'N–GND',  kind: 'gridv', gain: 0.00368 },
+  [TY.GRID_L1L2_ADC]: { name: 'GRID_L1L2_ADC', lbl: 'L1–L2',  kind: 'gridv', gain: 0.00245 },
 
-  [TY.ACT_RCD_TEST]: { name: 'ACT_RCD_TEST', lbl: 'RCD test', kind: 'bool', act: true },
+  [TY.ACT_RCD_TEST]: { name: 'ACT_RCD_TEST', lbl: 'RCD test', kind: 'bool', act: true,
+                       oneShot: true, activeLbl: 'TESTING', activeBtn: 'Testing…' },
+  /* Firmware reports the logical RD6 error assertion. */
   [TY.RCD_ERR]:      { name: 'RCD_ERR',   lbl: 'Error',      kind: 'bool', onLbl: 'ERR',  offLbl: '—', onCls: 'err' },
   [TY.RCD_F6MA]:     { name: 'RCD_F6MA',  lbl: 'Trip 6 mA',  kind: 'bool', onLbl: 'TRIP', offLbl: '—', onCls: 'ok' },
   [TY.RCD_F30MA]:    { name: 'RCD_F30MA', lbl: 'Trip 30 mA', kind: 'bool', onLbl: 'TRIP', offLbl: '—', onCls: 'ok' },
+  [TY.RCD_STATUS]:   { name: 'RCD_STATUS', lbl: 'Self-test', kind: 'enum',
+                       map: { 0: ['IDLE', ''], 1: ['RUNNING', 'warn'], 2: ['PASS', 'ok'],
+                              3: ['INITIAL FAULT', 'err'], 4: ['6 mA TIMEOUT', 'err'],
+                              5: ['30 mA TIMEOUT', 'err'], 6: ['RECOVERY TIMEOUT', 'err'],
+                              7: ['SENSOR ERROR', 'err'], 8: ['SEQUENCE FAILED', 'err'] } },
 
-  [TY.ACT_FPGA_TEST]: { name: 'ACT_FPGA_TEST', lbl: 'FPGA test', kind: 'bool', act: true, oneShot: true },
+  [TY.ACT_FPGA_TEST]: { name: 'ACT_FPGA_TEST', lbl: 'FPGA test', kind: 'bool', act: true,
+                        oneShot: true, activeLbl: 'LOADING', activeBtn: 'Loading…' },
   [TY.FPGA_CDONE]:    { name: 'FPGA_CDONE', lbl: 'CDONE', kind: 'bool', onLbl: 'HIGH', offLbl: 'LOW', onCls: 'ok' },
   [TY.FPGA_INT]:      { name: 'FPGA_INT',   lbl: 'INT',   kind: 'bool', onLbl: 'HIGH', offLbl: 'LOW', onCls: 'warn' },
   [TY.FPGA_STATUS]:   { name: 'FPGA_STATUS', lbl: 'Upload', kind: 'enum',
@@ -268,7 +302,8 @@ const TYPES = {
 const GROUPS = [
   { title: 'Generic sensors', types: [TY.TEMP_AMBIENT_ADC, TY.TEMP_SOCKET_ADC, TY.TEMP_RCD_ADC, TY.PWR_HWID_ADC] },
   { title: 'Grid detect', types: [TY.GRID_NGND_ADC, TY.GRID_L1L2_ADC] },
-  { title: 'RCD — benvac RDC121', act: TY.ACT_RCD_TEST, types: [TY.RCD_ERR, TY.RCD_F6MA, TY.RCD_F30MA] },
+  { title: 'RCD — benvac RCMB121-1', act: TY.ACT_RCD_TEST,
+    types: [TY.RCD_STATUS, TY.RCD_ERR, TY.RCD_F6MA, TY.RCD_F30MA] },
   { title: 'FPGA — iCE5LP1K-SG48', act: TY.ACT_FPGA_TEST,
     types: [TY.FPGA_STATUS, TY.FPGA_CDONE, TY.FPGA_INT] },
   { title: 'Servo', act: TY.ACT_SRV_TEST, types: [TY.SRV_STATE], charts: [TY.SRV_POS_ADC, TY.SRV_CURR_ADC] },
@@ -431,6 +466,11 @@ class SimTransport extends Transport {
     this.fpgaQueued = false;
     this.fpgaStatus = 0;
     this.fpgaCdone = 0;
+    this.rcdQueued = false;
+    this.rcdStatus = 0;
+    this.rcdErr = 0;
+    this.rcdF6 = 0;
+    this.rcdF30 = 0;
     this.rxParser = new FrameParser();
     this.rxParser.onFrame = f => this._onClientFrame(f);
   }
@@ -441,6 +481,7 @@ class SimTransport extends Transport {
     every(1000, () => this._slowTelemetry());
     every(500, () => this._fastTelemetry());
     every(100, () => this._fpgaTelemetry());
+    every(100, () => this._rcdTelemetry());
     every(15000, () => this._corruptFrame());
   }
   async disconnect() {
@@ -455,6 +496,30 @@ class SimTransport extends Transport {
   }
   _onClientFrame(f) {
     if ((f.hdr & 0x0F) !== WP.SRC_CLIENT) return;
+    if (f.type === TY.ACT_RCD_TEST) {
+      if (f.value.length !== 1 || f.value[0] !== 1 || this.rcdQueued) return;
+      this.rcdQueued = true;                        // ignore retries immediately
+      this.timers.push(setTimeout(() => {
+        this.act[TY.ACT_RCD_TEST] = 1;
+        this.actSince[TY.ACT_RCD_TEST] = Date.now();
+        this.rcdStatus = 1;                         // RUNNING
+        this.rcdErr = this.rcdF6 = this.rcdF30 = 0;
+        this.timers.push(setTimeout(() => { this.rcdF6 = 1; }, 300));
+        this.timers.push(setTimeout(() => {
+          this.rcdF30 = 1;
+        }, 900));
+        this.timers.push(setTimeout(() => { this.rcdErr = 1; }, 1100));
+        this.timers.push(setTimeout(() => {
+          this.rcdErr = 0;
+          this.rcdF6 = this.rcdF30 = 0;
+          this.rcdStatus = 2;                       // PASS remains visible
+          this.act[TY.ACT_RCD_TEST] = 0;
+          delete this.actSince[TY.ACT_RCD_TEST];
+          this.rcdQueued = false;
+        }, 1400));
+      }, 350));
+      return;
+    }
     if (f.type === TY.ACT_FPGA_TEST) {
       if (f.value.length !== 1 || f.value[0] !== 1 || this.fpgaQueued) return;
       this.fpgaQueued = true;                       // ignore retries immediately
@@ -491,11 +556,11 @@ class SimTransport extends Transport {
   _slowTelemetry() {
     const n = a => (Math.random() - 0.5) * a;
     this._emit(TY.TEMP_AMBIENT_ADC, this._u16(21000 + n(300)));
-    this._emit(TY.TEMP_SOCKET_ADC, this._u16(24500 + n(300)));
-    this._emit(TY.TEMP_RCD_ADC, this._u16(22800 + n(300)));
-    this._emit(TY.PWR_HWID_ADC, this._u16(31200 + n(100)));
-    this._emit(TY.GRID_NGND_ADC, this._u16(1800 + n(200)));
-    this._emit(TY.GRID_L1L2_ADC, this._u16(43000 + n(500)));
+    this._emit(TY.TEMP_SOCKET_ADC, this._u16(938 + n(12)));  // ~26 °C
+    this._emit(TY.TEMP_RCD_ADC, this._u16(914 + n(12)));     // ~24 °C
+    this._emit(TY.PWR_HWID_ADC, this._u16(3086 + n(8)));     // ~2.5 V
+    this._emit(TY.GRID_NGND_ADC, this._u16(2037 + n(20)));  // ~0 V N-GND
+    this._emit(TY.GRID_L1L2_ADC, this._u16(2733 + n(20)));  // ~230 V L1-L2
     this._emit(TY.EM_LINK, [0x01]);
     this._emit(TY.EM_FWVER, [0x04, 0xFC, 0x08]);
     this._emit(TY.EM_DRDY, [1]);
@@ -511,10 +576,6 @@ class SimTransport extends Transport {
         delete this.actSince[type];
       }
     }
-    this._emit(TY.RCD_ERR, [0]);
-    const rcdT = this.act[TY.ACT_RCD_TEST] ? Date.now() - this.actSince[TY.ACT_RCD_TEST] : 0;
-    this._emit(TY.RCD_F6MA, [rcdT > 1500 ? 1 : 0]);
-    this._emit(TY.RCD_F30MA, [rcdT > 3500 ? 1 : 0]);
   }
   _fastTelemetry() {
     this.t += WP.BUFFER_LOG_SIZE * 0.09;
@@ -525,7 +586,7 @@ class SimTransport extends Transport {
     this._emit(TY.EM_IA, this._arr(t => s(t, 0.3, 4000, 32768)));
     this._emit(TY.EM_IB, this._arr(t => s(t, 2.4, 3600, 32768)));
     this._emit(TY.EM_IMAX, this._arr(t => 36900 + 300 * Math.sin(t * 0.7)));
-    for (const type of [TY.ACT_SRV_TEST, TY.ACT_RCD_TEST]) {
+    for (const type of [TY.ACT_SRV_TEST]) {
       this._emit(type, [this.act[type]]);
     }
     if (this.act[TY.ACT_SRV_TEST]) {
@@ -543,6 +604,13 @@ class SimTransport extends Transport {
     this._emit(TY.FPGA_STATUS, [this.fpgaStatus]);
     this._emit(TY.FPGA_CDONE, [this.fpgaCdone]);
     this._emit(TY.FPGA_INT, [0]);
+  }
+  _rcdTelemetry() {
+    this._emit(TY.ACT_RCD_TEST, [this.act[TY.ACT_RCD_TEST]]);
+    this._emit(TY.RCD_STATUS, [this.rcdStatus]);
+    this._emit(TY.RCD_ERR, [this.rcdErr]);
+    this._emit(TY.RCD_F6MA, [this.rcdF6]);
+    this._emit(TY.RCD_F30MA, [this.rcdF30]);
   }
   _corruptFrame() {
     if (!this.connected) return;
@@ -590,7 +658,7 @@ function decodeValue(meta, bytes) {
   switch (meta.kind) {
     case 'u8': case 'bool': case 'enum':
       return bytes.length >= 1 ? bytes[0] : null;
-    case 'u16': case 'cdegc':
+    case 'u16': case 'cdegc': case 'adctemp': case 'adcv': case 'gridv':
       return bytes.length >= 2 ? bytes[0] | (bytes[1] << 8) : null;
     case 'u16arr': {
       const out = [];
@@ -610,6 +678,12 @@ function formatValue(meta, v) {
       return meta.scale ? (v * meta.scale).toFixed(meta.dec ?? 2) : String(v);
     case 'cdegc': /* signed 16-bit, 0.01 degC per LSB */
       return v + ' raw · ' + (((v << 16) >> 16) / 100).toFixed(2) + ' °C';
+    case 'adctemp':
+      return v + ' raw · ' + adcDegC(v).toFixed(1) + ' °C';
+    case 'adcv':
+      return v + ' raw · ' + adcVolts(v).toFixed(3) + ' V';
+    case 'gridv':
+      return v + ' raw · ' + gridVolts(v, meta.gain).toFixed(1) + ' V';
     case 'bool':
       return v ? (meta.onLbl ?? 'ON') : (meta.offLbl ?? 'OFF');
     case 'enum':
@@ -852,9 +926,9 @@ function renderAct(type) {
       a.btn.textContent = 'Pending…';
       a.btn.disabled = true;
     } else if (v) {
-      a.stateEl.textContent = 'LOADING';
+      a.stateEl.textContent = TYPES[type].activeLbl ?? 'ACTIVE';
       a.stateEl.className = 'chip warn';
-      a.btn.textContent = 'Loading…';
+      a.btn.textContent = TYPES[type].activeBtn ?? 'Running…';
       a.btn.disabled = true;
     } else if (a.failed) {
       a.stateEl.textContent = 'NO CONVERGE';
@@ -1112,6 +1186,12 @@ setInterval(() => {
     hb.textContent = 'HB ' + age.toFixed(1) + 's';
     hb.className = 'chip ' + (age < 1.5 ? 'ok' : 'err');
   }
+
+  /* fade the readings under the RECONNECTING cover while the link is
+     down involuntarily (reconnect cycle, or connected but data stalled) */
+  const lost = reconnectPending() || app.reconnectVerifying ||
+      (app.transport?.connected && app.lastFrameAt && now - app.lastFrameAt > 2000);
+  $('linklost').classList.toggle('show', !!lost);
 }, 300);
 
 /* ---- boot ---- */

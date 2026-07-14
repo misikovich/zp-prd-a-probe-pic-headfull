@@ -45,57 +45,6 @@
 
 /**
  * @ingroup  pinsdriver
- * @brief    Sets the RA0 GPIO Pin which has a custom name of PP_AIN to High
- * @pre      The RA0 must be set as Output Pin             
- * @param    none
- * @return   none  
- */
-#define PP_AIN_SetHigh()          (_LATA0 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RA0 GPIO Pin which has a custom name of PP_AIN to Low
- * @pre      The RA0 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define PP_AIN_SetLow()           (_LATA0 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Toggles the RA0 GPIO Pin which has a custom name of PP_AIN
- * @pre      The RA0 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define PP_AIN_Toggle()           (_LATA0 ^= 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Reads the value of the RA0 GPIO Pin which has a custom name of PP_AIN
- * @param    none
- * @return   none  
- */
-#define PP_AIN_GetValue()         _RA0
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RA0 GPIO Pin which has a custom name of PP_AIN as Input
- * @param    none
- * @return   none  
- */
-#define PP_AIN_SetDigitalInput()  (_TRISA0 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RA0 GPIO Pin which has a custom name of PP_AIN as Output
- * @param    none
- * @return   none  
- */
-#define PP_AIN_SetDigitalOutput() (_TRISA0 = 0)
-
-/**
- * @ingroup  pinsdriver
  * @brief    Sets the RA1 GPIO Pin which has a custom name of EM_ALM to High
  * @pre      The RA1 must be set as Output Pin             
  * @param    none
@@ -144,210 +93,6 @@
  * @return   none  
  */
 #define EM_ALM_SetDigitalOutput() (_TRISA1 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RA3 GPIO Pin which has a custom name of V_L1L2 to High
- * @pre      The RA3 must be set as Output Pin             
- * @param    none
- * @return   none  
- */
-#define V_L1L2_SetHigh()          (_LATA3 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RA3 GPIO Pin which has a custom name of V_L1L2 to Low
- * @pre      The RA3 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define V_L1L2_SetLow()           (_LATA3 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Toggles the RA3 GPIO Pin which has a custom name of V_L1L2
- * @pre      The RA3 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define V_L1L2_Toggle()           (_LATA3 ^= 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Reads the value of the RA3 GPIO Pin which has a custom name of V_L1L2
- * @param    none
- * @return   none  
- */
-#define V_L1L2_GetValue()         _RA3
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RA3 GPIO Pin which has a custom name of V_L1L2 as Input
- * @param    none
- * @return   none  
- */
-#define V_L1L2_SetDigitalInput()  (_TRISA3 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RA3 GPIO Pin which has a custom name of V_L1L2 as Output
- * @param    none
- * @return   none  
- */
-#define V_L1L2_SetDigitalOutput() (_TRISA3 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RA4 GPIO Pin which has a custom name of PWR_HW_ID to High
- * @pre      The RA4 must be set as Output Pin             
- * @param    none
- * @return   none  
- */
-#define PWR_HW_ID_SetHigh()          (_LATA4 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RA4 GPIO Pin which has a custom name of PWR_HW_ID to Low
- * @pre      The RA4 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define PWR_HW_ID_SetLow()           (_LATA4 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Toggles the RA4 GPIO Pin which has a custom name of PWR_HW_ID
- * @pre      The RA4 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define PWR_HW_ID_Toggle()           (_LATA4 ^= 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Reads the value of the RA4 GPIO Pin which has a custom name of PWR_HW_ID
- * @param    none
- * @return   none  
- */
-#define PWR_HW_ID_GetValue()         _RA4
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RA4 GPIO Pin which has a custom name of PWR_HW_ID as Input
- * @param    none
- * @return   none  
- */
-#define PWR_HW_ID_SetDigitalInput()  (_TRISA4 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RA4 GPIO Pin which has a custom name of PWR_HW_ID as Output
- * @param    none
- * @return   none  
- */
-#define PWR_HW_ID_SetDigitalOutput() (_TRISA4 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RB2 GPIO Pin which has a custom name of CP_AIN to High
- * @pre      The RB2 must be set as Output Pin             
- * @param    none
- * @return   none  
- */
-#define CP_AIN_SetHigh()          (_LATB2 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RB2 GPIO Pin which has a custom name of CP_AIN to Low
- * @pre      The RB2 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define CP_AIN_SetLow()           (_LATB2 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Toggles the RB2 GPIO Pin which has a custom name of CP_AIN
- * @pre      The RB2 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define CP_AIN_Toggle()           (_LATB2 ^= 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Reads the value of the RB2 GPIO Pin which has a custom name of CP_AIN
- * @param    none
- * @return   none  
- */
-#define CP_AIN_GetValue()         _RB2
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RB2 GPIO Pin which has a custom name of CP_AIN as Input
- * @param    none
- * @return   none  
- */
-#define CP_AIN_SetDigitalInput()  (_TRISB2 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RB2 GPIO Pin which has a custom name of CP_AIN as Output
- * @param    none
- * @return   none  
- */
-#define CP_AIN_SetDigitalOutput() (_TRISB2 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RB3 GPIO Pin which has a custom name of PEN_ALM to High
- * @pre      The RB3 must be set as Output Pin             
- * @param    none
- * @return   none  
- */
-#define PEN_ALM_SetHigh()          (_LATB3 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RB3 GPIO Pin which has a custom name of PEN_ALM to Low
- * @pre      The RB3 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define PEN_ALM_SetLow()           (_LATB3 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Toggles the RB3 GPIO Pin which has a custom name of PEN_ALM
- * @pre      The RB3 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define PEN_ALM_Toggle()           (_LATB3 ^= 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Reads the value of the RB3 GPIO Pin which has a custom name of PEN_ALM
- * @param    none
- * @return   none  
- */
-#define PEN_ALM_GetValue()         _RB3
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RB3 GPIO Pin which has a custom name of PEN_ALM as Input
- * @param    none
- * @return   none  
- */
-#define PEN_ALM_SetDigitalInput()  (_TRISB3 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RB3 GPIO Pin which has a custom name of PEN_ALM as Output
- * @param    none
- * @return   none  
- */
-#define PEN_ALM_SetDigitalOutput() (_TRISB3 = 0)
 
 /**
  * @ingroup  pinsdriver
@@ -450,57 +195,6 @@
  * @return   none  
  */
 #define BCD8_SetDigitalOutput() (_TRISB6 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RB7 GPIO Pin which has a custom name of V_NG to High
- * @pre      The RB7 must be set as Output Pin             
- * @param    none
- * @return   none  
- */
-#define V_NG_SetHigh()          (_LATB7 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Sets the RB7 GPIO Pin which has a custom name of V_NG to Low
- * @pre      The RB7 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define V_NG_SetLow()           (_LATB7 = 0)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Toggles the RB7 GPIO Pin which has a custom name of V_NG
- * @pre      The RB7 must be set as Output Pin
- * @param    none
- * @return   none  
- */
-#define V_NG_Toggle()           (_LATB7 ^= 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Reads the value of the RB7 GPIO Pin which has a custom name of V_NG
- * @param    none
- * @return   none  
- */
-#define V_NG_GetValue()         _RB7
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RB7 GPIO Pin which has a custom name of V_NG as Input
- * @param    none
- * @return   none  
- */
-#define V_NG_SetDigitalInput()  (_TRISB7 = 1)
-
-/**
- * @ingroup  pinsdriver
- * @brief    Configures the RB7 GPIO Pin which has a custom name of V_NG as Output
- * @param    none
- * @return   none  
- */
-#define V_NG_SetDigitalOutput() (_TRISB7 = 0)
 
 /**
  * @ingroup  pinsdriver
@@ -1116,105 +810,105 @@
 
 /**
  * @ingroup  pinsdriver
- * @brief    Sets the RD7 GPIO Pin which has a custom name of RCD_FAC30MA to High
+ * @brief    Sets the RD7 GPIO Pin which has a custom name of RCD_F30MA_AC to High
  * @pre      The RD7 must be set as Output Pin             
  * @param    none
  * @return   none  
  */
-#define RCD_FAC30MA_SetHigh()          (_LATD7 = 1)
+#define RCD_F30MA_AC_SetHigh()          (_LATD7 = 1)
 
 /**
  * @ingroup  pinsdriver
- * @brief    Sets the RD7 GPIO Pin which has a custom name of RCD_FAC30MA to Low
+ * @brief    Sets the RD7 GPIO Pin which has a custom name of RCD_F30MA_AC to Low
  * @pre      The RD7 must be set as Output Pin
  * @param    none
  * @return   none  
  */
-#define RCD_FAC30MA_SetLow()           (_LATD7 = 0)
+#define RCD_F30MA_AC_SetLow()           (_LATD7 = 0)
 
 /**
  * @ingroup  pinsdriver
- * @brief    Toggles the RD7 GPIO Pin which has a custom name of RCD_FAC30MA
+ * @brief    Toggles the RD7 GPIO Pin which has a custom name of RCD_F30MA_AC
  * @pre      The RD7 must be set as Output Pin
  * @param    none
  * @return   none  
  */
-#define RCD_FAC30MA_Toggle()           (_LATD7 ^= 1)
+#define RCD_F30MA_AC_Toggle()           (_LATD7 ^= 1)
 
 /**
  * @ingroup  pinsdriver
- * @brief    Reads the value of the RD7 GPIO Pin which has a custom name of RCD_FAC30MA
+ * @brief    Reads the value of the RD7 GPIO Pin which has a custom name of RCD_F30MA_AC
  * @param    none
  * @return   none  
  */
-#define RCD_FAC30MA_GetValue()         _RD7
+#define RCD_F30MA_AC_GetValue()         _RD7
 
 /**
  * @ingroup  pinsdriver
- * @brief    Configures the RD7 GPIO Pin which has a custom name of RCD_FAC30MA as Input
+ * @brief    Configures the RD7 GPIO Pin which has a custom name of RCD_F30MA_AC as Input
  * @param    none
  * @return   none  
  */
-#define RCD_FAC30MA_SetDigitalInput()  (_TRISD7 = 1)
+#define RCD_F30MA_AC_SetDigitalInput()  (_TRISD7 = 1)
 
 /**
  * @ingroup  pinsdriver
- * @brief    Configures the RD7 GPIO Pin which has a custom name of RCD_FAC30MA as Output
+ * @brief    Configures the RD7 GPIO Pin which has a custom name of RCD_F30MA_AC as Output
  * @param    none
  * @return   none  
  */
-#define RCD_FAC30MA_SetDigitalOutput() (_TRISD7 = 0)
+#define RCD_F30MA_AC_SetDigitalOutput() (_TRISD7 = 0)
 
 /**
  * @ingroup  pinsdriver
- * @brief    Sets the RD8 GPIO Pin which has a custom name of RCD_FDC6MA to High
+ * @brief    Sets the RD8 GPIO Pin which has a custom name of RCD_F6MA_DC to High
  * @pre      The RD8 must be set as Output Pin             
  * @param    none
  * @return   none  
  */
-#define RCD_FDC6MA_SetHigh()          (_LATD8 = 1)
+#define RCD_F6MA_DC_SetHigh()          (_LATD8 = 1)
 
 /**
  * @ingroup  pinsdriver
- * @brief    Sets the RD8 GPIO Pin which has a custom name of RCD_FDC6MA to Low
+ * @brief    Sets the RD8 GPIO Pin which has a custom name of RCD_F6MA_DC to Low
  * @pre      The RD8 must be set as Output Pin
  * @param    none
  * @return   none  
  */
-#define RCD_FDC6MA_SetLow()           (_LATD8 = 0)
+#define RCD_F6MA_DC_SetLow()           (_LATD8 = 0)
 
 /**
  * @ingroup  pinsdriver
- * @brief    Toggles the RD8 GPIO Pin which has a custom name of RCD_FDC6MA
+ * @brief    Toggles the RD8 GPIO Pin which has a custom name of RCD_F6MA_DC
  * @pre      The RD8 must be set as Output Pin
  * @param    none
  * @return   none  
  */
-#define RCD_FDC6MA_Toggle()           (_LATD8 ^= 1)
+#define RCD_F6MA_DC_Toggle()           (_LATD8 ^= 1)
 
 /**
  * @ingroup  pinsdriver
- * @brief    Reads the value of the RD8 GPIO Pin which has a custom name of RCD_FDC6MA
+ * @brief    Reads the value of the RD8 GPIO Pin which has a custom name of RCD_F6MA_DC
  * @param    none
  * @return   none  
  */
-#define RCD_FDC6MA_GetValue()         _RD8
+#define RCD_F6MA_DC_GetValue()         _RD8
 
 /**
  * @ingroup  pinsdriver
- * @brief    Configures the RD8 GPIO Pin which has a custom name of RCD_FDC6MA as Input
+ * @brief    Configures the RD8 GPIO Pin which has a custom name of RCD_F6MA_DC as Input
  * @param    none
  * @return   none  
  */
-#define RCD_FDC6MA_SetDigitalInput()  (_TRISD8 = 1)
+#define RCD_F6MA_DC_SetDigitalInput()  (_TRISD8 = 1)
 
 /**
  * @ingroup  pinsdriver
- * @brief    Configures the RD8 GPIO Pin which has a custom name of RCD_FDC6MA as Output
+ * @brief    Configures the RD8 GPIO Pin which has a custom name of RCD_F6MA_DC as Output
  * @param    none
  * @return   none  
  */
-#define RCD_FDC6MA_SetDigitalOutput() (_TRISD8 = 0)
+#define RCD_F6MA_DC_SetDigitalOutput() (_TRISD8 = 0)
 
 /**
  * @ingroup  pinsdriver
@@ -1479,6 +1173,22 @@
  */
 void PINS_Initialize(void);
 
+/**
+ * @ingroup  pinsdriver
+ * @brief    This function is callback for FPGA_INT Pin
+ * @param    none
+ * @return   none   
+ */
+void FPGA_INT_CallBack(void);
+
+
+/**
+ * @ingroup    pinsdriver
+ * @brief      This function assigns a function pointer with a callback address
+ * @param[in]  InterruptHandler - Address of the callback function 
+ * @return     none  
+ */
+void FPGA_INT_SetInterruptHandler(void (* InterruptHandler)(void));
 
 
 #endif

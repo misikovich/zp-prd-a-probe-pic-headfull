@@ -38,6 +38,7 @@ target_sources(zp_prd_a_probe_pic_headfull_default_toolchain_XC16_2_10_compile P
     "${zp_drivers_dir}/emeter_service.c"
     "${zp_drivers_dir}/fpga.c"
     "${zp_drivers_dir}/fpga_service.c"
+    "${zp_drivers_dir}/rcd_service.c"
     "${zp_drivers_dir}/rgbw.c"
     "${zp_drivers_dir}/esp_uart.c"
     "${zp_drivers_dir}/wproto.c")

@@ -41,6 +41,7 @@
 #include "../pins.h"
 
 // Section: File specific functions
+static void (*FPGA_INT_InterruptHandler)(void) = NULL;
 
 // Section: Driver Interface Function Definitions
 void PINS_Initialize(void)
@@ -51,7 +52,7 @@ void PINS_Initialize(void)
     LATA = 0x0000U;
     LATB = 0x0010U;
     LATC = 0x0800U;
-    LATD = 0x0000U;
+    LATD = 0x0010U;
 
     /****************************************************************************
      * Setting the GPIO Direction SFR(s)
@@ -68,11 +69,11 @@ void PINS_Initialize(void)
     CNPUA = 0x0000U;
     CNPUB = 0x0060U;
     CNPUC = 0x0300U;
-    CNPUD = 0x0002U;
+    CNPUD = 0x0000U;
     CNPDA = 0x0000U;
     CNPDB = 0xF000U;
     CNPDC = 0x0000U;
-    CNPDD = 0x0021U;
+    CNPDD = 0x0023U;
 
 
     /****************************************************************************
@@ -88,7 +89,7 @@ void PINS_Initialize(void)
      * Setting the Analog/Digital Configuration SFR(s)
      ***************************************************************************/
     ANSELA = 0x001DU;
-    ANSELB = 0x0087U;
+    ANSELB = 0x008FU;
     ANSELC = 0x00CAU;
     ANSELD = 0x0C00U;
 
@@ -99,6 +100,7 @@ void PINS_Initialize(void)
 
         RPINR18bits.U1RXR = 0x003AU; //RC10->UART1:U1RX;
         RPINR20bits.SDI1R = 0x0042U; //RD2->SPI1:SDI1;
+        RPINR9bits.ICM7R = 0x004FU; //RD15->SCCP7:ICM7;
         RPINR19bits.U2RXR = 0x003CU; //RC12->UART2:U2RX;
         RPOR13bits.RP59R = 0x0001U;  //RC11->UART1:U1TX;
         RPOR15bits.RP62R = 0x0005U;  //RC14->SPI1:SDO1;
@@ -114,6 +116,66 @@ void PINS_Initialize(void)
 
      __builtin_write_RPCON(0x0800); // lock PPS
 
+    /*******************************************************************************
+    * Interrupt On Change: positive
+    *******************************************************************************/
+    CNEN0Dbits.CNEN0D9 = 1; //Pin : RD9U; 
 
+    /****************************************************************************
+     * Interrupt On Change: flag
+     ***************************************************************************/
+    CNFDbits.CNFD9 = 0;    //Pin : FPGA_INT
+
+    /****************************************************************************
+     * Interrupt On Change: config
+     ***************************************************************************/
+    CNCONDbits.CNSTYLE = 1; //Config for PORTD
+    CNCONDbits.ON = 1; //Config for PORTD
+
+    /* Initialize IOC Interrupt Handler*/
+    FPGA_INT_SetInterruptHandler(&FPGA_INT_CallBack);
+
+    /****************************************************************************
+     * Interrupt On Change: Interrupt Enable
+     ***************************************************************************/
+    IFS4bits.CNDIF = 0; //Clear CNDI interrupt flag
+    IEC4bits.CNDIE = 1; //Enable CNDI interrupt
+}
+
+void __attribute__ ((weak)) FPGA_INT_CallBack(void)
+{
+
+}
+
+void FPGA_INT_SetInterruptHandler(void (* InterruptHandler)(void))
+{ 
+    IEC4bits.CNDIE = 0; //Disable CNDI interrupt
+    FPGA_INT_InterruptHandler = InterruptHandler; 
+    IEC4bits.CNDIE = 1; //Enable CNDI interrupt
+}
+
+/* Interrupt service function for the CNDI interrupt. */
+/* cppcheck-suppress misra-c2012-8.4
+*
+* (Rule 8.4) REQUIRED: A compatible declaration shall be visible when an object or 
+* function with external linkage is defined
+*
+* Reasoning: Interrupt declaration are provided by compiler and are available
+* outside the driver folder
+*/
+void __attribute__ (( interrupt, no_auto_psv )) _CNDInterrupt (void)
+{
+    if(CNFDbits.CNFD9 == 1)
+    {
+        if(FPGA_INT_InterruptHandler != NULL) 
+        { 
+            FPGA_INT_InterruptHandler(); 
+        }
+        
+        CNFDbits.CNFD9 = 0;  //Clear flag for Pin - FPGA_INT
+    }
+    
+    // Clear the flag
+    IFS4bits.CNDIF = 0;
 }
 

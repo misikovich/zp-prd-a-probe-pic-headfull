@@ -9,6 +9,7 @@
 #include "spi_bus.h"
 #include "emeter_service.h"
 #include "fpga_service.h"
+#include "rcd_service.h"
 #include "rgbw.h"
 #include "sensor_service.h"
 #include "wproto.h"
@@ -131,6 +132,7 @@ int main(void)
     sensor_service_init();
     fpga_service_init();
     emeter_service_init();
+    rcd_service_init();
     dlog("Drivers Initialized");
 
     xTaskCreate(heartbeat_task, "beat", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
