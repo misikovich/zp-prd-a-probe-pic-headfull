@@ -826,8 +826,7 @@ const LOG_MAX_LINES = 400;
 const logPending = [];
 
 function logLine(cls, dir, raw, decoded) {
-  const now = new Date();
-  const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+  const ts = (performance.now() / 1000).toFixed(3);
   let hx = hexs(raw.slice(0, 20));
   if (raw.length > 20) hx += ' …';
   logPending.push({ ts, cls, dir, hx, decoded });
