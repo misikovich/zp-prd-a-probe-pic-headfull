@@ -143,9 +143,9 @@ typedef enum {
   WP_TYPE_EM_FHZ            = 0x19, /* uint16, 0.01 hz/LSB */
   WP_TYPE_EM_WARN           = 0x1A, /* uint8 */
   WP_TYPE_EM_ERR            = 0x1B, /* uint8 */
-  WP_TYPE_EM_TEMP           = 0x1C, /* uint16, 0-65535 */
-  WP_TYPE_EM_INTERRUPT      = 0x1D, /* uint8, 0-1 bool */
-  WP_TYPE_EM_ALARM          = 0x1E, /* uint8, 0-1 bool */
+  WP_TYPE_EM_TEMP           = 0x1C, /* int16, die temp, 0.01 degC/LSB */
+  WP_TYPE_EM_INTERRUPT      = 0x1D, /* uint8, IRQ pin level, active low (0 = asserted) */
+  WP_TYPE_EM_ALARM          = 0x1E, /* uint8, alarm pin level, active low (0 = asserted) */
 
   /* Motor/Servo - Activateable */
   WP_ACT_SRV_TEST           = 0x20, /* uint8, 0-1 bool */

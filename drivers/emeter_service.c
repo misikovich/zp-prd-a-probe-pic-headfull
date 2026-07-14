@@ -12,7 +12,7 @@
 #define EMETER_SERVICE_STACK 384u /* 16-bit words */
 #define EMETER_SERVICE_PRIO  1u
 #define EMETER_SAMPLE_MS     100u
-#define EMETER_BATCH_MS      500u
+#define EMETER_BATCH_POLL_MS 100u
 #define EMETER_SCALAR_MS     1000u
 
 typedef struct {
@@ -251,26 +251,30 @@ static u8 collect_em_error(u8 *value)
 static u8 collect_em_temp(u8 *value)
 {
     EmeterSample sample;
-    u16 raw;
+    s32 raw;
+    s16 centic;
 
     if (!get_latest(&sample)) {
         return 0u;
     }
-    raw = (u16)(sample.tempc & 0xFFFFu); /* existing unsigned raw S.10 */
-    value[0] = (u8)(raw & 0xFFu);
-    value[1] = (u8)(raw >> 8u);
+    /* S.10 degC truncated to 16 bits only spans +/-32 degC, so convert
+       the full 24-bit value to 0.01 degC/LSB before sending */
+    raw = emeter_s24(sample.tempc);
+    centic = (s16)((raw * 100L + ((raw >= 0) ? 512L : -512L)) / 1024L);
+    value[0] = (u8)((u16)centic & 0xFFu);
+    value[1] = (u8)((u16)centic >> 8u);
     return 2u;
 }
 
 static u8 collect_em_interrupt(u8 *value)
 {
-    value[0] = EM_INT_GetValue() ? 0u : 1u; /* active low */
+    value[0] = EM_INT_GetValue() ? 1u : 0u; /* raw pin level; asserted low */
     return 1u;
 }
 
 static u8 collect_em_alarm(u8 *value)
 {
-    value[0] = EM_ALM_GetValue() ? 0u : 1u; /* active low */
+    value[0] = EM_ALM_GetValue() ? 1u : 0u; /* raw pin level; asserted low */
     return 1u;
 }
 
@@ -283,17 +287,19 @@ void emeter_service_init(void)
     have_frame = false;
     emeter_init();
 
-    configASSERT(wproto_add_reporter(WP_TYPE_EM_VA, EMETER_BATCH_MS,
+    /* Poll readiness faster than the five-sample batch period. Each
+     * collector's generation guard still emits exactly once per batch. */
+    configASSERT(wproto_add_reporter(WP_TYPE_EM_VA, EMETER_BATCH_POLL_MS,
             collect_em_va));
-    configASSERT(wproto_add_reporter(WP_TYPE_EM_VB, EMETER_BATCH_MS,
+    configASSERT(wproto_add_reporter(WP_TYPE_EM_VB, EMETER_BATCH_POLL_MS,
             collect_em_vb));
-    configASSERT(wproto_add_reporter(WP_TYPE_EM_VC, EMETER_BATCH_MS,
+    configASSERT(wproto_add_reporter(WP_TYPE_EM_VC, EMETER_BATCH_POLL_MS,
             collect_em_vc));
-    configASSERT(wproto_add_reporter(WP_TYPE_EM_IA, EMETER_BATCH_MS,
+    configASSERT(wproto_add_reporter(WP_TYPE_EM_IA, EMETER_BATCH_POLL_MS,
             collect_em_ia));
-    configASSERT(wproto_add_reporter(WP_TYPE_EM_IB, EMETER_BATCH_MS,
+    configASSERT(wproto_add_reporter(WP_TYPE_EM_IB, EMETER_BATCH_POLL_MS,
             collect_em_ib));
-    configASSERT(wproto_add_reporter(WP_TYPE_EM_IMAX, EMETER_BATCH_MS,
+    configASSERT(wproto_add_reporter(WP_TYPE_EM_IMAX, EMETER_BATCH_POLL_MS,
             collect_em_imax));
 
     configASSERT(wproto_add_reporter(WP_TYPE_EM_LINK, EMETER_SCALAR_MS,

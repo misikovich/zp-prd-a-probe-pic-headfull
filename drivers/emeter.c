@@ -9,8 +9,9 @@
  * transactions reach word addresses 0x00..0x3F only.
  * The shared bus service selects SPI_EM_CFG for each emeter claim.
  *
- * Liveness: CYCLE increments every high-rate sample (~3307 SPS, one tick
- * each ~302 us), so it must advance between the first and last read of a
+ * Liveness: with the MAX71071 AFE, CYCLE increments every high-rate sample
+ * (~2381 SPS, one tick each ~420 us), so it must advance between the first
+ * and last read of a
  * poll sweep. FRAME increments per accumulation interval (default 1 s).
  *
  * Ported from the PIC24 test-probe project: raw GPIO/spi2_bus replaced
@@ -28,7 +29,7 @@
 
 #define EMETER_DELAY_CYCLES_PER_US (CLOCK_InstructionFrequencyGet() / 1000000UL)
 #define EMETER_CS_SETTLE_US    1u
-#define EMETER_ALIVE_WAIT_US   700u      /* > 2 CYCLE ticks at 3307 SPS */
+#define EMETER_ALIVE_WAIT_US   900u      /* > 2 CYCLE ticks at 2381 SPS */
 /* upper bound on waiting for the bus; a running FPGA bitstream upload
    holds it for ~0.7 s, so a poll during an upload reports busy instead */
 #define EMETER_BUS_TIMEOUT     pdMS_TO_TICKS(50)
@@ -44,10 +45,10 @@
 #define EMETER_IND_EXEC        0x000100UL
 #define EMETER_RESET_CLEAR_MAX 3u
 #define EMETER_SAMPLES_TRIES_MAX 2u
-/* accumulation interval in high-rate samples: 331 of ~3307 SPS gives
+/* accumulation interval in high-rate samples: 238 of ~2381 SPS gives
    ~100 ms, i.e. ~10 fresh low-rate results per second (RAM copy only -
    never flash-saved, meter reverts to its stored 1 s default on reset) */
-#define EMETER_SAMPLES_PER_INTERVAL 331UL
+#define EMETER_SAMPLES_PER_INTERVAL 238UL
 
 /* attempts spent on post-reboot housekeeping; re-armed once the RESET
    bit reads back clear, so a mid-session meter reboot is caught */

@@ -68,6 +68,19 @@
   .chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
   .chip.err  { color: var(--err);  border-color: color-mix(in srgb, var(--err) 40%, transparent); }
 
+  /* out-of-range / unexpected value: wave rippling out of the element */
+  @keyframes alertwave {
+    0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--err) 55%, transparent),
+                       0 0 0 0 color-mix(in srgb, var(--err) 30%, transparent); }
+    70%  { box-shadow: 0 0 0 7px transparent, 0 0 0 13px transparent; }
+    100% { box-shadow: 0 0 0 7px transparent, 0 0 0 13px transparent; }
+  }
+  .alert {
+    border-radius: 999px;
+    color: var(--err);
+    animation: alertwave 1.5s ease-out infinite;
+  }
+
   #stats { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
   #stats .chip b { color: var(--text); font-weight: 600; }
 
@@ -194,8 +207,10 @@ const TY = {
   ACK: 0xF0, ERROR: 0xF1, HEARTBEAT: 0xFF,
 };
 
-/* kind: u8 | u16 | u16arr | hex | bool | enum
- * bool meta: onLbl/offLbl + onCls (chip class when ON)          */
+/* kind: u8 | u16 | u16arr | hex | bool | enum | cdegc
+ * bool meta: onLbl/offLbl + onCls (chip class when ON)
+ * alert(v): true when the decoded value is out of range / unexpected —
+ *           adds the .alert wave to the value element                  */
 const TYPES = {
   [TY.TEMP_AMBIENT_ADC]: { name: 'TEMP_AMBIENT_ADC', lbl: 'Ambient temp',  kind: 'u16', unit: 'ADC' },
   [TY.TEMP_SOCKET_ADC]:  { name: 'TEMP_SOCKET_ADC',  lbl: 'Socket temp',   kind: 'u16', unit: 'ADC' },
@@ -204,20 +219,25 @@ const TYPES = {
 
   [TY.EM_LINK]:  { name: 'EM_LINK', lbl: 'Link', kind: 'enum',
                    map: { 0x01: ['OK', 'ok'], 0x00: ['ALL-0', 'err'], 0xFF: ['ALL-F', 'err'] } },
-  [TY.EM_VA]:    { name: 'EM_VA',   lbl: 'V phase A', kind: 'u16arr', color: 'var(--chart-v)' },
-  [TY.EM_VB]:    { name: 'EM_VB',   lbl: 'V phase B', kind: 'u16arr', color: 'var(--chart-v)' },
-  [TY.EM_VC]:    { name: 'EM_VC',   lbl: 'V phase C', kind: 'u16arr', color: 'var(--chart-v)' },
-  [TY.EM_IA]:    { name: 'EM_IA',   lbl: 'I phase A', kind: 'u16arr', color: 'var(--chart-i)' },
-  [TY.EM_IB]:    { name: 'EM_IB',   lbl: 'I phase B', kind: 'u16arr', color: 'var(--chart-i)' },
-  [TY.EM_IMAX]:  { name: 'EM_IMAX', lbl: 'I max',     kind: 'u16arr', color: 'var(--chart-x)' },
-  [TY.EM_FWVER]: { name: 'EM_FWVER', lbl: 'Firmware', kind: 'hex' },
+  [TY.EM_VA]:    { name: 'EM_VA',   lbl: 'V phase A', kind: 'u16arr', color: 'var(--chart-v)', minspan: 100 },
+  [TY.EM_VB]:    { name: 'EM_VB',   lbl: 'V phase B', kind: 'u16arr', color: 'var(--chart-v)', minspan: 100 },
+  [TY.EM_VC]:    { name: 'EM_VC',   lbl: 'V phase C', kind: 'u16arr', color: 'var(--chart-v)', minspan: 100 },
+  [TY.EM_IA]:    { name: 'EM_IA',   lbl: 'I phase A', kind: 'u16arr', color: 'var(--chart-i)', minspan: 100 },
+  [TY.EM_IB]:    { name: 'EM_IB',   lbl: 'I phase B', kind: 'u16arr', color: 'var(--chart-i)', minspan: 100 },
+  [TY.EM_IMAX]:  { name: 'EM_IMAX', lbl: 'I max',     kind: 'u16arr', color: 'var(--chart-x)', minspan: 100 },
+  [TY.EM_FWVER]: { name: 'EM_FWVER', lbl: 'Firmware', kind: 'hex',
+                   alert: v => v !== '04 FC 08' },
   [TY.EM_DRDY]:  { name: 'EM_DRDY',  lbl: 'Data ready', kind: 'bool', onLbl: 'RDY', offLbl: '—', onCls: 'ok' },
   [TY.EM_FHZ]:   { name: 'EM_FHZ',   lbl: 'Line freq',  kind: 'u16', scale: 0.01, dec: 2, unit: 'Hz' },
   [TY.EM_WARN]:  { name: 'EM_WARN',  lbl: 'Warnings',   kind: 'hex' },
   [TY.EM_ERR]:   { name: 'EM_ERR',   lbl: 'Errors',     kind: 'hex' },
-  [TY.EM_TEMP]:  { name: 'EM_TEMP',  lbl: 'Die temp',   kind: 'u16', unit: 'raw' },
-  [TY.EM_INTERRUPT]: { name: 'EM_INTERRUPT', lbl: 'Interrupt', kind: 'bool', onLbl: 'IRQ', offLbl: '—', onCls: 'warn' },
-  [TY.EM_ALARM]:     { name: 'EM_ALARM',     lbl: 'Alarm',     kind: 'bool', onLbl: 'ALARM', offLbl: '—', onCls: 'err' },
+  [TY.EM_TEMP]:  { name: 'EM_TEMP',  lbl: 'Die temp',   kind: 'cdegc',
+                   alert: v => { const c = ((v << 16) >> 16) / 100; return c < 10 || c > 40; } },
+  /* INT/ALM carry the raw pin level and are active low: 0 = asserted */
+  [TY.EM_INTERRUPT]: { name: 'EM_INTERRUPT', lbl: 'Interrupt', kind: 'enum',
+                       map: { 0x00: ['IRQ', 'warn'], 0x01: ['—', ''] }, alert: v => v === 0 },
+  [TY.EM_ALARM]:     { name: 'EM_ALARM',     lbl: 'Alarm',     kind: 'enum',
+                       map: { 0x00: ['ALARM', 'err'], 0x01: ['—', ''] }, alert: v => v === 0 },
 
   [TY.ACT_SRV_TEST]: { name: 'ACT_SRV_TEST', lbl: 'Servo test', kind: 'bool', act: true },
   [TY.SRV_POS_ADC]:  { name: 'SRV_POS_ADC',  lbl: 'Position',   kind: 'u16arr', color: 'var(--chart-v)' },
@@ -482,9 +502,9 @@ class SimTransport extends Transport {
     this._emit(TY.EM_FHZ, this._u16(5000 + n(6)));
     this._emit(TY.EM_WARN, [0]);
     this._emit(TY.EM_ERR, [0]);
-    this._emit(TY.EM_TEMP, this._u16(26200 + n(150)));
-    this._emit(TY.EM_INTERRUPT, [0]);
-    this._emit(TY.EM_ALARM, [0]);
+    this._emit(TY.EM_TEMP, this._u16(2560 + n(20)));   // centi-degC ~25.6 °C
+    this._emit(TY.EM_INTERRUPT, [1]);   // pin level, active low: 1 = idle
+    this._emit(TY.EM_ALARM, [1]);
     for (const [type, since] of Object.entries(this.actSince)) {
       if (this.act[type] === 1 && Date.now() - since > 6000) {  // test run finished
         this.act[type] = 0;
@@ -570,7 +590,7 @@ function decodeValue(meta, bytes) {
   switch (meta.kind) {
     case 'u8': case 'bool': case 'enum':
       return bytes.length >= 1 ? bytes[0] : null;
-    case 'u16':
+    case 'u16': case 'cdegc':
       return bytes.length >= 2 ? bytes[0] | (bytes[1] << 8) : null;
     case 'u16arr': {
       const out = [];
@@ -588,6 +608,8 @@ function formatValue(meta, v) {
   switch (meta.kind) {
     case 'u16':
       return meta.scale ? (v * meta.scale).toFixed(meta.dec ?? 2) : String(v);
+    case 'cdegc': /* signed 16-bit, 0.01 degC per LSB */
+      return v + ' raw · ' + (((v << 16) >> 16) / 100).toFixed(2) + ' °C';
     case 'bool':
       return v ? (meta.onLbl ?? 'ON') : (meta.offLbl ?? 'OFF');
     case 'enum':
@@ -601,37 +623,22 @@ function formatValue(meta, v) {
 
 /* ---- strip chart ---- */
 class StripChart {
-  constructor(canvas, cssColor) {
+  constructor(canvas, cssColor, minSpan = 0) {
     this.canvas = canvas;
     this.color = cssColor;
+    this.minSpan = minSpan;
     this.data = [];
     this.cap = 360;
     this.dirty = true;
-    this.pos = null;      // fractional index of the sample shown at the trace tip
-    this.rate = 0;        // estimated inbound samples/sec, paces the scroll
-    this.lastPush = 0;
-    this.lastBatch = 0;
-    this.lastT = 0;
-    this.vmn = null;      // eased vertical range
-    this.vmx = null;
   }
   push(samples) {
-    if (!samples.length) return;
-    const now = performance.now();
-    if (this.lastPush) {
-      const dt = (now - this.lastPush) / 1000;
-      if (dt > 0.02 && dt < 5) {
-        const r = samples.length / dt;
-        this.rate = this.rate ? this.rate * 0.7 + r * 0.3 : r;
-      }
+    for (const v of samples) {
+      this.data.push(v);
+      if (this.data.length > this.cap) this.data.shift();
     }
-    this.lastPush = now;
-    this.lastBatch = samples.length;
-    if (!this.dirty) this.lastT = now;   // was idle: don't count the idle gap as scroll time
-    for (const v of samples) this.data.push(v);
     this.dirty = true;
   }
-  draw(now = performance.now()) {
+  draw() {
     const c = this.canvas, dpr = devicePixelRatio || 1;
     const w = c.clientWidth, h = c.clientHeight;
     if (!w) return;
@@ -640,65 +647,36 @@ class StripChart {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, h);
     const d = this.data;
-    if (d.length < 2) { this.dirty = false; return; }
-
-    // glide the trace tip toward the newest sample instead of snapping
-    const dt = Math.min(0.15, Math.max(0, (now - this.lastT) / 1000));
-    this.lastT = now;
-    const target = d.length - 1;
-    if (this.pos === null) this.pos = target;
-    const maxLag = Math.max(this.lastBatch * 2, 8);
-    if (target - this.pos > maxLag) this.pos = target - maxLag;
-    if (this.pos < target) {
-      const speed = Math.max(this.rate * 1.05, (target - this.pos) * 2);
-      this.pos = Math.min(target, this.pos + speed * dt);
-    }
-    // drop samples that have fully scrolled off the left edge
-    while (this.pos - (this.cap - 1) >= 1 && d.length > this.cap) {
-      d.shift(); this.pos -= 1;
-    }
-
+    if (d.length < 2) return;
     let mn = Infinity, mx = -Infinity;
     for (const v of d) { if (v < mn) mn = v; if (v > mx) mx = v; }
     if (mx - mn < 1) { mn -= 1; mx += 1; }
+    if (mx - mn < this.minSpan) {
+      const mid = (mn + mx) / 2;
+      mn = mid - this.minSpan / 2;
+      mx = mid + this.minSpan / 2;
+    }
     const pad = (mx - mn) * 0.08;
     mn -= pad; mx += pad;
-    // ease the autoscale range so the trace doesn't jump vertically
-    if (this.vmn === null) { this.vmn = mn; this.vmx = mx; }
-    else {
-      const k = Math.min(1, dt * 6);
-      this.vmn += (mn - this.vmn) * k;
-      this.vmx += (mx - this.vmx) * k;
-    }
-
     g.strokeStyle = 'rgba(140,160,180,0.12)';
     g.lineWidth = 1;
     g.beginPath();
     for (const f of [0.25, 0.5, 0.75]) { g.moveTo(0, h * f); g.lineTo(w, h * f); }
     g.stroke();
-
-    const left = Math.max(0, this.pos - (this.cap - 1));
-    const X = i => ((i - left) / (this.cap - 1)) * w;
-    const Y = v => h - ((v - this.vmn) / (this.vmx - this.vmn)) * h;
     g.strokeStyle = this.color;
     g.lineWidth = 1.5;
     g.beginPath();
-    const i0 = Math.floor(left), iN = Math.floor(this.pos);
-    for (let i = i0; i <= iN; i++)
-      i === i0 ? g.moveTo(X(i), Y(d[i])) : g.lineTo(X(i), Y(d[i]));
-    const frac = this.pos - iN;
-    if (frac > 0 && iN + 1 < d.length)
-      g.lineTo(X(this.pos), Y(d[iN] + (d[iN + 1] - d[iN]) * frac));
+    for (let i = 0; i < d.length; i++) {
+      const x = (i / (this.cap - 1)) * w;
+      const y = h - ((d[i] - mn) / (mx - mn)) * h;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
     g.stroke();
-
-    const span = this.vmx - this.vmn;
-    this.dirty = target - this.pos > 1e-3
-      || Math.abs(mn - this.vmn) > span * 1e-3
-      || Math.abs(mx - this.vmx) > span * 1e-3;
+    this.dirty = false;
   }
 }
-function chartLoop(t) {
-  for (const ch of Object.values(app.charts)) if (ch.dirty) ch.draw(t);
+function chartLoop() {
+  for (const ch of Object.values(app.charts)) if (ch.dirty) ch.draw();
   requestAnimationFrame(chartLoop);
 }
 
@@ -759,7 +737,7 @@ function buildCards() {
       const canvas = document.createElement('canvas');
       blk.append(head, canvas);
       card.appendChild(blk);
-      app.charts[t] = new StripChart(canvas, resolveColor(meta.color ?? 'var(--accent)'));
+      app.charts[t] = new StripChart(canvas, resolveColor(meta.color ?? 'var(--accent)'), meta.minspan ?? 0);
       app.rows[t] = { valEl: cv, meta };
     }
     root.appendChild(card);
@@ -820,6 +798,7 @@ function onFrame(f) {
     } else if (meta.kind === 'enum') {
       row.valEl.className = 'chip ' + (meta.map?.[v]?.[1] ?? '');
     }
+    if (meta.alert) row.valEl.classList.toggle('alert', !!meta.alert(v));
   }
   if (meta.kind === 'u16arr') app.charts[f.type]?.push(v);
   if (meta.act) {

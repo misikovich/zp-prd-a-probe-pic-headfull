@@ -21,10 +21,10 @@
 #define RGBW_ENABLE_LOG 0u
 
 /* per-channel duty ceilings in the raw 0..255 domain */
-#define LED_MAX_R           80u
-#define LED_MAX_G           80u
-#define LED_MAX_B           80u
-#define LED_MAX_W           80u
+#define LED_MAX_R           200u
+#define LED_MAX_G           200u
+#define LED_MAX_B           200u
+#define LED_MAX_W           200u
 
 #define RGBW_TPS 60
 static inline void rgbw_hold_cycle(void) {

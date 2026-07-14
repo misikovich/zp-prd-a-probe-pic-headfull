@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "a-esp-middleman",
+			"path": "ESP/a-esp-middleman"
+		}
+	],
+	"settings": {
+		"mplab.clangd.compileCommandsDir": "${workspaceFolder}/_build/zp-prd-a-probe-pic-headfull/default",
+		"mplab.runcmake.provideRunCMakeBuildTasks": false
+	}
+}

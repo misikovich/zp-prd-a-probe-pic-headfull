@@ -10,6 +10,7 @@
 #include "emeter_service.h"
 #include "fpga_service.h"
 #include "rgbw.h"
+#include "sensor_service.h"
 #include "wproto.h"
 /*
     Main application
@@ -65,8 +66,8 @@ static void led_flash_twice(RGBW_STATE color)
     u8 i;
 
     for (i = 0u; i < 2u; i++) {
-        rgbw_hold_transition(color, 100u);
-        rgbw_hold_transition(RGBW_CLEAR, 180u);
+        rgbw_hold_transition(color, 150u);
+        rgbw_hold_transition(RGBW_CLEAR, 240u);
     }
 }
 
@@ -89,10 +90,10 @@ static bool led_breathe(RGBW_STATE dim, RGBW_STATE bright,
 static void led_status_task(void *parameters)
 {
     /* Percentages are in the gamma-corrected 0..255 input domain. */
-    static const RGBW_STATE wait_dim = { 0u, 25u, 77u, 0u };       /* 30% */
-    static const RGBW_STATE wait_bright = { 0u, 50u, 179u, 0u };  /* 70% */
-    static const RGBW_STATE connected_dim = { 0u, 51u, 12u, 0u };      /* GREENF 20% */
-    static const RGBW_STATE connected_bright = { 0u, 128u, 30u, 0u }; /* GREENF 50% */
+    static const RGBW_STATE wait_dim = { 10u, 25u, 77u, 0u };       /* 30% */
+    static const RGBW_STATE wait_bright = { 18u, 50u, 179u, 0u };  /* 70% */
+    static const RGBW_STATE connected_dim = { 10u, 51u, 12u, 0u };      /* GREENF 20% */
+    static const RGBW_STATE connected_bright = { 18u, 128u, 50u, 0u }; /* GREENF 50% */
     bool prev_connected = false;
     bool connected;
 
@@ -127,6 +128,7 @@ int main(void)
     spi_bus_init();
     rgbw_init();
     wproto_init();
+    sensor_service_init();
     fpga_service_init();
     emeter_service_init();
     dlog("Drivers Initialized");

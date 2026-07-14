@@ -32,6 +32,7 @@ target_sources(zp_prd_a_probe_pic_headfull_default_toolchain_XC16_2_10_compile P
     "${zp_freertos_dir}/portable/MemMang/heap_4.c"
     "${zp_rtos_dir}/port/port.c"
     "${zp_rtos_dir}/rtos_hooks.c"
+    "${zp_drivers_dir}/sensor_service.c"
     "${zp_drivers_dir}/spi_bus.c"
     "${zp_drivers_dir}/emeter.c"
     "${zp_drivers_dir}/emeter_service.c"
