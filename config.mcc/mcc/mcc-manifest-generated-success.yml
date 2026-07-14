@@ -2,7 +2,7 @@
 
 manifest_file_version: 1.0.0
 project: N/A
-creation_date: 2026-07-07T17:11:35.605+02:00[Europe/Oslo]
+creation_date: 2026-07-13T17:00:38.113+02:00[Europe/Oslo]
 operating_system: Linux
 mcc_mode: VSCodePlugin
 mcc_mode_version: Unknown
@@ -20,6 +20,7 @@ modules:
 - {name: '@mchp-mcc/clock-16bit-driver', type: MELODY, version: 1.2.1}
 - {name: '@mchp-mcc/dmt-16bit-driver', type: MELODY, version: 1.0.8}
 - {name: '@mchp-mcc/dspic33-configuration-bits', type: MELODY, version: 1.2.6}
+- {name: '@mchp-mcc/ic-driver', type: MELODY, version: 1.0.7}
 - {name: '@mchp-mcc/icd-16bit-driver', type: MELODY, version: 1.0.3}
 - {name: '@mchp-mcc/main-16bit-manager', type: MELODY, version: 1.1.6}
 - {name: '@mchp-mcc/pic-16bit', type: MELODY, version: 5.16.1}

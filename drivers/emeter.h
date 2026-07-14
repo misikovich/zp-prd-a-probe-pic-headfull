@@ -18,6 +18,9 @@
 #define EMETER_ERROR_ALL_ONES  3u  /* MISO stuck/floating high: no link */
 #define EMETER_ERROR_NO_LINK   4u  /* garbage response */
 #define EMETER_ERROR_STALE     5u  /* link up but CYCLE counter frozen */
+#define EMETER_ERROR_SPI       6u  /* SPI setup/state failure */
+#define EMETER_ERROR_SPI_TX    7u  /* SPI transmit timed out */
+#define EMETER_ERROR_SPI_RX    8u  /* SPI receive timed out */
 
 /*
  * Register word addresses (datasheet Table 41). Single-word SPI

@@ -7,15 +7,14 @@
  * SPI mode 3 (CPOL = 1, CPHA = 1), MSB first, SCK <= 1 MHz, CS held low for
  * the whole 5-byte transaction. Registers are 24-bit words; single-word
  * transactions reach word addresses 0x00..0x3F only.
- * The shared SPI1_EM_CFG configuration provides the mode and clock.
+ * The shared bus service selects SPI_EM_CFG for each emeter claim.
  *
  * Liveness: CYCLE increments every high-rate sample (~3307 SPS, one tick
  * each ~302 us), so it must advance between the first and last read of a
  * poll sweep. FRAME increments per accumulation interval (default 1 s).
  *
  * Ported from the PIC24 test-probe project: raw GPIO/spi2_bus replaced
- * with MCC pins, the spi_bus module, and FreeRTOS bus arbitration (the
- * polled MCC driver has no TX/RX error paths, so those codes are gone).
+ * with MCC pins, the spi_bus module, and FreeRTOS bus arbitration.
  */
 
 #include <libpic30.h>
@@ -64,24 +63,31 @@ static void emeter_delay_us(u16 us)
 }
 
 /* one CS-framed full-duplex transfer, in place; bus claimed by the caller */
-static void emeter_xfer(u8 *frame, u8 len)
+static spi_bus_result_t emeter_xfer(u8 *frame, u8 len)
 {
-    spi_bus_select(SPI_BUS_EMETER);
+    spi_bus_result_t result;
+
+    result = spi_bus_select();
+    if (result != SPI_BUS_OK) {
+        return result;
+    }
     emeter_delay_us(EMETER_CS_SETTLE_US);
 
-    spi_bus_exchange(frame, len);
+    result = spi_bus_exchange(frame, len);
 
     emeter_delay_us(EMETER_CS_SETTLE_US);
-    spi_bus_deselect(SPI_BUS_EMETER);
+    spi_bus_deselect();
+    return result;
 }
 
 /* bus claimed by the caller */
-static u8 emeter_read_reg_raw(u8 addr, u32 *value)
+static spi_bus_result_t emeter_read_reg_raw(u8 addr, u32 *value)
 {
     u8 frame[EMETER_FRAME_LEN];
+    spi_bus_result_t result;
 
     if ((value == NULL) || (addr > EMETER_ADDR_MAX)) {
-        return 0u;
+        return SPI_BUS_INVALID_ARGUMENT;
     }
 
     frame[0] = EMETER_SPI_START;
@@ -90,19 +96,22 @@ static u8 emeter_read_reg_raw(u8 addr, u32 *value)
     frame[3] = 0u;
     frame[4] = 0u;
 
-    emeter_xfer(frame, EMETER_FRAME_LEN);
+    result = emeter_xfer(frame, EMETER_FRAME_LEN);
+    if (result != SPI_BUS_OK) {
+        return result;
+    }
 
     *value = (((u32)frame[2] << 16u) | ((u32)frame[3] << 8u) |
             (u32)frame[4]) & EMETER_WORD_MASK;
-    return 1u;
+    return SPI_BUS_OK;
 }
 
-static u8 emeter_write_reg_raw(u8 addr, u32 value)
+static spi_bus_result_t emeter_write_reg_raw(u8 addr, u32 value)
 {
     u8 frame[EMETER_FRAME_LEN];
 
     if (addr > EMETER_ADDR_MAX) {
-        return 0u;
+        return SPI_BUS_INVALID_ARGUMENT;
     }
 
     frame[0] = EMETER_SPI_START;
@@ -111,17 +120,19 @@ static u8 emeter_write_reg_raw(u8 addr, u32 value)
     frame[3] = (u8)((value >> 8u) & 0xFFu);
     frame[4] = (u8)(value & 0xFFu);
 
-    emeter_xfer(frame, EMETER_FRAME_LEN);
-    return 1u;
+    return emeter_xfer(frame, EMETER_FRAME_LEN);
 }
 
 /* queue an indirect write to a word address beyond the direct 0x3F
    window; the meter commits it within one high-rate sample (~302 us)
    and clears the upper bits of IND_WR_ADDR when done */
-static u8 emeter_write_indirect_raw(u8 target, u32 value)
+static spi_bus_result_t emeter_write_indirect_raw(u8 target, u32 value)
 {
-    if (!emeter_write_reg_raw(EMETER_REG_IND_WR_DATA, value)) {
-        return 0u;
+    spi_bus_result_t result;
+
+    result = emeter_write_reg_raw(EMETER_REG_IND_WR_DATA, value);
+    if (result != SPI_BUS_OK) {
+        return result;
     }
 
     return emeter_write_reg_raw(EMETER_REG_IND_WR_ADDR,
@@ -135,26 +146,28 @@ static u8 emeter_write_indirect_raw(u8 target, u32 value)
    that refuses the writes is not hammered forever and the RESET
    indication stays honest; observing the bit clear re-arms both steps
    for the next reboot */
-static void emeter_reset_bit_housekeeping(const EmeterSample *sample)
+static spi_bus_result_t emeter_reset_bit_housekeeping(
+        const EmeterSample *sample)
 {
     if ((sample->status & EMETER_STATUS_RESET) == 0UL) {
         RESET_CLEAR_TRIES = 0u;
         SAMPLES_TRIES = 0u;
-        return;
+        return SPI_BUS_OK;
     }
 
     if (SAMPLES_TRIES < EMETER_SAMPLES_TRIES_MAX) {
         SAMPLES_TRIES++;
-        (void)emeter_write_indirect_raw(EMETER_XREG_SAMPLES,
+        return emeter_write_indirect_raw(EMETER_XREG_SAMPLES,
                 EMETER_SAMPLES_PER_INTERVAL);
-        return;
     }
 
     if (RESET_CLEAR_TRIES < EMETER_RESET_CLEAR_MAX) {
         RESET_CLEAR_TRIES++;
-        (void)emeter_write_indirect_raw(EMETER_XREG_STATUS_CLEAR,
+        return emeter_write_indirect_raw(EMETER_XREG_STATUS_CLEAR,
                 EMETER_STATUS_RESET);
     }
+
+    return SPI_BUS_OK;
 }
 
 static void emeter_clear_sample(EmeterSample *sample)
@@ -195,38 +208,60 @@ static u8 emeter_sample_all_equal(const EmeterSample *sample, u32 word)
             (sample->tempc == word);
 }
 
-static u8 emeter_read_sweep(EmeterSample *sample, u32 *cycle_first)
+static spi_bus_result_t emeter_read_sweep(EmeterSample *sample,
+        u32 *cycle_first)
 {
-    u8 ok;
+    spi_bus_result_t result;
 
-    ok = emeter_read_reg_raw(EMETER_REG_CYCLE, cycle_first);
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_FW_VERSION,
-            &sample->fw_version));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_STATUS, &sample->status));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_FRAME, &sample->frame));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_VA_RMS, &sample->va_rms));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_VB_RMS, &sample->vb_rms));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_VC_RMS, &sample->vc_rms));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_IA_RMS, &sample->ia_rms));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_IB_RMS, &sample->ib_rms));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_IC_RMS, &sample->ic_rms));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_PF_T, &sample->pf_t));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_FREQ, &sample->freq));
-    ok = (u8)(ok && emeter_read_reg_raw(EMETER_REG_TEMPC_A, &sample->tempc));
+#define EMETER_READ_OR_RETURN(address, destination) \
+    do { \
+        result = emeter_read_reg_raw((address), (destination)); \
+        if (result != SPI_BUS_OK) { \
+            return result; \
+        } \
+    } while (0)
 
-    if (ok) {
-        emeter_delay_us(EMETER_ALIVE_WAIT_US);
-        ok = emeter_read_reg_raw(EMETER_REG_CYCLE, &sample->cycle);
+    EMETER_READ_OR_RETURN(EMETER_REG_CYCLE, cycle_first);
+    EMETER_READ_OR_RETURN(EMETER_REG_FW_VERSION, &sample->fw_version);
+    EMETER_READ_OR_RETURN(EMETER_REG_STATUS, &sample->status);
+    EMETER_READ_OR_RETURN(EMETER_REG_FRAME, &sample->frame);
+    EMETER_READ_OR_RETURN(EMETER_REG_VA_RMS, &sample->va_rms);
+    EMETER_READ_OR_RETURN(EMETER_REG_VB_RMS, &sample->vb_rms);
+    EMETER_READ_OR_RETURN(EMETER_REG_VC_RMS, &sample->vc_rms);
+    EMETER_READ_OR_RETURN(EMETER_REG_IA_RMS, &sample->ia_rms);
+    EMETER_READ_OR_RETURN(EMETER_REG_IB_RMS, &sample->ib_rms);
+    EMETER_READ_OR_RETURN(EMETER_REG_IC_RMS, &sample->ic_rms);
+    EMETER_READ_OR_RETURN(EMETER_REG_PF_T, &sample->pf_t);
+    EMETER_READ_OR_RETURN(EMETER_REG_FREQ, &sample->freq);
+    EMETER_READ_OR_RETURN(EMETER_REG_TEMPC_A, &sample->tempc);
+
+    emeter_delay_us(EMETER_ALIVE_WAIT_US);
+    EMETER_READ_OR_RETURN(EMETER_REG_CYCLE, &sample->cycle);
+
+#undef EMETER_READ_OR_RETURN
+
+    return SPI_BUS_OK;
+}
+
+static u8 emeter_error_from_bus(spi_bus_result_t result)
+{
+    if (result == SPI_BUS_BUSY) {
+        return EMETER_ERROR_BUS_BUSY;
+    }
+    if (result == SPI_BUS_TX_TIMEOUT) {
+        return EMETER_ERROR_SPI_TX;
+    }
+    if (result == SPI_BUS_RX_TIMEOUT) {
+        return EMETER_ERROR_SPI_RX;
     }
 
-    return ok;
+    return EMETER_ERROR_SPI;
 }
 
 void emeter_init(void)
 {
     /* pins.c leaves the meter in reset; release it (active low) */
     EM_RST_SetHigh();
-    EM_CS_SetHigh();
 
     RESET_CLEAR_TRIES = 0u;
     SAMPLES_TRIES = 0u;
@@ -235,6 +270,7 @@ void emeter_init(void)
 u8 emeter_poll(EmeterSample *sample)
 {
     u32 cycle_first;
+    spi_bus_result_t result;
     u8 ok;
 
     if (sample == NULL) {
@@ -243,14 +279,19 @@ u8 emeter_poll(EmeterSample *sample)
 
     emeter_clear_sample(sample);
 
-    if (!spi_bus_claim(EMETER_BUS_TIMEOUT)) {
-        sample->busy = 1u;
-        sample->error = EMETER_ERROR_BUS_BUSY;
+    result = spi_bus_claim(SPI_BUS_EMETER, EMETER_BUS_TIMEOUT);
+    if (result != SPI_BUS_OK) {
+        sample->busy = (result == SPI_BUS_BUSY) ? 1u : 0u;
+        sample->error = emeter_error_from_bus(result);
         return 0u;
     }
 
     cycle_first = 0UL;
-    ok = emeter_read_sweep(sample, &cycle_first);
+    result = emeter_read_sweep(sample, &cycle_first);
+    ok = (result == SPI_BUS_OK) ? 1u : 0u;
+    if (!ok) {
+        sample->error = emeter_error_from_bus(result);
+    }
 
     if (ok) {
         if (emeter_sample_all_equal(sample, 0UL)) {
@@ -276,7 +317,11 @@ u8 emeter_poll(EmeterSample *sample)
     }
 
     if (ok) {
-        emeter_reset_bit_housekeeping(sample);
+        result = emeter_reset_bit_housekeeping(sample);
+        if (result != SPI_BUS_OK) {
+            sample->error = emeter_error_from_bus(result);
+            ok = 0u;
+        }
     }
 
     spi_bus_release();
@@ -285,28 +330,30 @@ u8 emeter_poll(EmeterSample *sample)
 
 u8 emeter_read_reg(u8 addr, u32 *value)
 {
-    u8 ok;
+    spi_bus_result_t result;
 
-    if (!spi_bus_claim(EMETER_BUS_TIMEOUT)) {
+    result = spi_bus_claim(SPI_BUS_EMETER, EMETER_BUS_TIMEOUT);
+    if (result != SPI_BUS_OK) {
         return 0u;
     }
 
-    ok = emeter_read_reg_raw(addr, value);
+    result = emeter_read_reg_raw(addr, value);
     spi_bus_release();
-    return ok;
+    return (result == SPI_BUS_OK) ? 1u : 0u;
 }
 
 u8 emeter_write_reg(u8 addr, u32 value)
 {
-    u8 ok;
+    spi_bus_result_t result;
 
-    if (!spi_bus_claim(EMETER_BUS_TIMEOUT)) {
+    result = spi_bus_claim(SPI_BUS_EMETER, EMETER_BUS_TIMEOUT);
+    if (result != SPI_BUS_OK) {
         return 0u;
     }
 
-    ok = emeter_write_reg_raw(addr, value);
+    result = emeter_write_reg_raw(addr, value);
     spi_bus_release();
-    return ok;
+    return (result == SPI_BUS_OK) ? 1u : 0u;
 }
 
 s32 emeter_s24(u32 raw)

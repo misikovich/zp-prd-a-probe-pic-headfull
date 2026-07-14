@@ -79,13 +79,13 @@ struct SPI1_HOST_CONFIG
 
 static const struct SPI1_HOST_CONFIG config[] = {  
                                         { 
-                                            /*Configuration setting for SPI1_EM_CFG.
-                                            SPI Mode : Mode 3, Sampled at : Middle, Data Width : 8 bits, Clock Frequency : 5000 kHz*/
-                                            0x9U,//SPI1BRGL
+                                            /*Configuration setting for SPI_EM_CFG.
+                                            SPI Mode : Mode 3, Sampled at : Middle, Data Width : 8 bits, Clock Frequency : 1000 kHz*/
+                                            0x31U,//SPI1BRGL
                                             0x61U,//SPI1CON1L
                                         },
                                         { 
-                                            /*Configuration setting for SPI1_FPGA_CFG.
+                                            /*Configuration setting for SPI_FPGA_CFG.
                                             SPI Mode : Mode 0, Sampled at : Middle, Data Width : 8 bits, Clock Frequency : 10000 kHz*/
                                             0x4U,//SPI1BRGL
                                             0x161U,//SPI1CON1L
@@ -96,8 +96,8 @@ static const struct SPI1_HOST_CONFIG config[] = {
 
 void SPI1_Initialize (void)
 {
-    // SPIBRGL 9; 
-    SPI1BRGL = 0x9U;
+    // SPIBRGL 49; 
+    SPI1BRGL = 0x31U;
     // AUDEN disabled; FRMEN disabled; AUDMOD I2S; FRMSYPW One clock wide; AUDMONO stereo; FRMCNT 0x0; MSSEN disabled; FRMPOL disabled; IGNROV disabled; SPISGNEXT not sign-extended; FRMSYNC disabled; URDTEN disabled; IGNTUR disabled; 
     SPI1CON1H = 0x0U;
     // WLENGTH 0; 

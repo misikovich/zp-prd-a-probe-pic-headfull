@@ -129,12 +129,12 @@ extern const struct SPI_HOST_INTERFACE SPI1_EM_FPGA;
 
 enum SPI1_HOST_USER_CONFIG{
      /**Custom name for configuration setting:
-    SPI Mode : Mode 3, Sampled at : Middle, Data Width : 8 bits, Clock Frequency : 5000 kHz**/
-    SPI1_EM_CFG,
+    SPI Mode : Mode 3, Sampled at : Middle, Data Width : 8 bits, Clock Frequency : 1000 kHz**/
+    SPI_EM_CFG,
     
      /**Custom name for configuration setting:
     SPI Mode : Mode 0, Sampled at : Middle, Data Width : 8 bits, Clock Frequency : 10000 kHz**/
-    SPI1_FPGA_CFG,
+    SPI_FPGA_CFG,
     
 };
 

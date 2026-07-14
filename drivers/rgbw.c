@@ -18,6 +18,7 @@
 /* SCCP period in timer counts; rgbw_init() pushes this through the MCC
  * API so the duty math below is self-consistent (2 kHz at Fp = 100 MHz). */
 #define LED_PWM_PERIOD_COUNTS 50000u
+#define RGBW_ENABLE_LOG 0u
 
 /* per-channel duty ceilings in the raw 0..255 domain */
 #define LED_MAX_R           80u
@@ -57,6 +58,7 @@ static u32 rgbw_transition_left(void) {
 }
 
 static void rgbw_log_u8(u8 value) {
+
     char digits[4];
     u8 count = 0u;
 
@@ -76,6 +78,8 @@ static void rgbw_log_u8(u8 value) {
 }
 
 static void rgbw_log_transition(const char *prefix, RGBW_STATE s) {
+    if (!RGBW_ENABLE_LOG) { return; }
+    
     dlog_write(prefix);
     dlog_write("r=");
     rgbw_log_u8(s.r);

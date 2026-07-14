@@ -2,8 +2,8 @@
 
 manifest_file_version: 1.0.0
 project: N/A
-creation_date: 2026-07-08T19:29:09.390+02:00[Europe/Oslo]
-operating_system: Mac OS X
+creation_date: 2026-07-13T17:45:54.681+02:00[Europe/Oslo]
+operating_system: Linux
 mcc_mode: VSCodePlugin
 mcc_mode_version: Unknown
 device_name: dsPIC33CK256MP506

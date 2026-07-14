@@ -101,6 +101,8 @@ static void emeter_sampler(void *parameters)
 {
     EmeterSample sample;
     TickType_t wake;
+    u8 last_error = 0xFFu;
+    char err_msg[] = "emeter: err=?";
     u8 ok;
 
     unused(parameters);
@@ -110,6 +112,11 @@ static void emeter_sampler(void *parameters)
     forever
     {
         ok = emeter_poll(&sample);
+        if (sample.error != last_error) {
+            last_error = sample.error;
+            err_msg[sizeof(err_msg) - 2u] = (char)('0' + sample.error);
+            dlog(err_msg);
+        }
         if ((!ok) && (sample.error == EMETER_ERROR_BUS_BUSY)) {
             /* Expected while FPGA owns SPI: retain the last valid state. */
             vTaskDelayUntil(&wake, pdMS_TO_TICKS(EMETER_SAMPLE_MS));

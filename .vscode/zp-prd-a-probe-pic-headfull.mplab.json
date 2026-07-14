@@ -74,7 +74,8 @@
                 "config.mcc/mcc_generated_files/system/src/interrupt.c",
                 "config.mcc/mcc_generated_files/system/src/traps.c",
                 "config.mcc/mcc_generated_files/system/src/where_was_i.s",
-                "config.mcc/mcc_generated_files/spi_host/src/spi1.c"
+                "config.mcc/mcc_generated_files/spi_host/src/spi1.c",
+                "config.mcc/mcc_generated_files/input_capture/src/sccp7.c"
             ]
         }
     ]

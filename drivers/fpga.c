@@ -4,8 +4,8 @@
  * Ported from the PIC24 test-probe project: raw GPIO/spi2_bus replaced
  * with MCC pins, the spi_bus module, and FreeRTOS bus arbitration.  The
  * bus is claimed for the whole upload, so emeter traffic simply waits
- * (its short claim timeout reports busy).  The shared SPI1_EM_CFG mode 3
- * clocking is fine for iCE5 slave configuration (CPOL=1/CPHA=1).
+ * (its short claim timeout reports busy). The bus service selects the
+ * FPGA-specific SPI configuration for the claim.
  */
 
 #include <libpic30.h>
@@ -20,7 +20,7 @@
 
 #define FPGA_DELAY_CYCLES_PER_US     (CLOCK_InstructionFrequencyGet() / 1000000UL)
 #define FPGA_CRESET_LOW_US           10u
-#define FPGA_CLEAR_WAIT_US           1200u
+#define FPGA_CLEAR_WAIT_US           2000u
 #define FPGA_POST_CONFIG_BYTES       7u
 #define FPGA_CDONE_TIMEOUT_US        5000u
 #define FPGA_BITSTREAM_SYNC_OFFSET   81u
@@ -41,7 +41,6 @@ static void fpga_delay_us(u16 us)
    actually runs. */
 void fpga_park(void)
 {
-    FPGA_CS_SetHigh();
     FPGA_CRST_SetLow();
 }
 
@@ -66,17 +65,21 @@ static u8 fpga_packed_next(FpgaPackedCursor *cur)
 
 /* emit one decoded bitstream byte; the first SYNC_OFFSET bytes are the
    human-readable image header the FPGA must not see */
-static void fpga_raw_emit(u32 *raw_pos, u8 byte)
+static spi_bus_result_t fpga_raw_emit(u32 *raw_pos, u8 byte)
 {
+    spi_bus_result_t result;
+
+    result = SPI_BUS_OK;
     if (*raw_pos >= FPGA_BITSTREAM_SYNC_OFFSET) {
-        (void)spi_bus_exchange_byte(byte);
+        result = spi_bus_exchange_byte(byte, NULL);
     }
     (*raw_pos)++;
+    return result;
 }
 
 /* decode the RLE stream (see tools/fpga_bitstream_pack.py) straight into
    the SPI byte loop; no RAM buffer between flash and the bus */
-static void fpga_stream_bitstream(void)
+static spi_bus_result_t fpga_stream_bitstream(void)
 {
     FpgaPackedCursor cur = { 0u, 0u, 0UL };
     u32 packed_len;
@@ -85,6 +88,7 @@ static void fpga_stream_bitstream(void)
     u8 byte;
     u8 value;
     u8 count;
+    spi_bus_result_t result;
 
     packed_len = 0UL;
     for (chunk = 0u; chunk < FPGA_BITSTREAM_CHUNK_COUNT; chunk++) {
@@ -96,31 +100,48 @@ static void fpga_stream_bitstream(void)
         byte = fpga_packed_next(&cur);
 
         if (byte != FPGA_BITSTREAM_RLE_ESC) {
-            fpga_raw_emit(&raw_pos, byte);
+            result = fpga_raw_emit(&raw_pos, byte);
+            if (result != SPI_BUS_OK) {
+                return result;
+            }
             continue;
         }
 
         value = fpga_packed_next(&cur);
         if (value == FPGA_BITSTREAM_RLE_ESC) {
-            fpga_raw_emit(&raw_pos, value);
+            result = fpga_raw_emit(&raw_pos, value);
+            if (result != SPI_BUS_OK) {
+                return result;
+            }
             continue;
         }
 
         count = fpga_packed_next(&cur);
         while (count > 0u) {
-            fpga_raw_emit(&raw_pos, value);
+            result = fpga_raw_emit(&raw_pos, value);
+            if (result != SPI_BUS_OK) {
+                return result;
+            }
             count--;
         }
     }
+
+    return SPI_BUS_OK;
 }
 
-static void fpga_post_config_clocks(void)
+static spi_bus_result_t fpga_post_config_clocks(void)
 {
     u8 i;
+    spi_bus_result_t result;
 
     for (i = 0u; i < FPGA_POST_CONFIG_BYTES; i++) {
-        (void)spi_bus_exchange_byte(0x00u);
+        result = spi_bus_exchange_byte(0x00u, NULL);
+        if (result != SPI_BUS_OK) {
+            return result;
+        }
     }
+
+    return SPI_BUS_OK;
 }
 
 static u8 fpga_wait_cdone(void)
@@ -144,6 +165,7 @@ static volatile u8 ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_IDLE;
 
 void fpga_prog_load(void)
 {
+    spi_bus_result_t result;
     u8 ok;
 
     if (ICE5_UPLOADING) {
@@ -159,7 +181,8 @@ void fpga_prog_load(void)
     /* release the user-logic reset; CRESET stays under our control */
     FPGA_RST_SetHigh();
 
-    if (!spi_bus_claim(FPGA_BUS_TIMEOUT)) {
+    result = spi_bus_claim(SPI_BUS_FPGA, FPGA_BUS_TIMEOUT);
+    if (result != SPI_BUS_OK) {
         ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_BUS_FAILED;
         FPGA_CRST_SetLow();
         ICE5_UPLOAD_FAILED = 1u;
@@ -168,23 +191,35 @@ void fpga_prog_load(void)
     }
 
     /* CS low across the CRESET pulse selects SPI-slave configuration */
-    spi_bus_select(SPI_BUS_FPGA);
+    result = spi_bus_select();
+    if (result != SPI_BUS_OK) {
+        ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_BUS_FAILED;
+        goto fpga_prog_done;
+    }
     FPGA_CRST_SetLow();
     fpga_delay_us(FPGA_CRESET_LOW_US);
     FPGA_CRST_SetHigh();
     fpga_delay_us(FPGA_CLEAR_WAIT_US);
 
-    fpga_stream_bitstream();
+    result = fpga_stream_bitstream();
+    if (result != SPI_BUS_OK) {
+        ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_BUS_FAILED;
+        goto fpga_prog_done;
+    }
 
     ICE5_CDONE = fpga_wait_cdone();
     if (ICE5_CDONE) {
-        ok = 1u;
-        fpga_post_config_clocks();
+        result = fpga_post_config_clocks();
+        if (result == SPI_BUS_OK) {
+            ok = 1u;
+        } else {
+            ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_BUS_FAILED;
+        }
     } else {
         ICE5_UPLOAD_STATUS = FPGA_UPLOAD_STATUS_CDONE_FAILED;
     }
 
-    spi_bus_deselect(SPI_BUS_FPGA);
+fpga_prog_done:
     if (!ok) {
         /* unconfigured FPGA: hold it in reset, off the shared bus */
         FPGA_CRST_SetLow();

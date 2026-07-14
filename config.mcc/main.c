@@ -89,10 +89,10 @@ static bool led_breathe(RGBW_STATE dim, RGBW_STATE bright,
 static void led_status_task(void *parameters)
 {
     /* Percentages are in the gamma-corrected 0..255 input domain. */
-    static const RGBW_STATE wait_dim = { 0u, 0u, 0u, 77u };       /* 30% */
-    static const RGBW_STATE wait_bright = { 0u, 0u, 0u, 179u };  /* 70% */
-    static const RGBW_STATE connected_dim = { 0u, 51u, 12u, 2u };      /* GREENF 20% */
-    static const RGBW_STATE connected_bright = { 0u, 128u, 30u, 5u }; /* GREENF 50% */
+    static const RGBW_STATE wait_dim = { 0u, 25u, 77u, 0u };       /* 30% */
+    static const RGBW_STATE wait_bright = { 0u, 50u, 179u, 0u };  /* 70% */
+    static const RGBW_STATE connected_dim = { 0u, 51u, 12u, 0u };      /* GREENF 20% */
+    static const RGBW_STATE connected_bright = { 0u, 128u, 30u, 0u }; /* GREENF 50% */
     bool prev_connected = false;
     bool connected;
 

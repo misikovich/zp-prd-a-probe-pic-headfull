@@ -78,7 +78,9 @@ static void fpga_worker(void *parameters)
     forever
     {
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        dlog("fpga: upload start");
         fpga_prog_load();
+        dlog("fpga: upload finished"); /* absence = wedged in the upload */
 
         taskENTER_CRITICAL();
         upload_active = false;
