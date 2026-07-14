@@ -818,23 +818,42 @@ function buildCards() {
   }
 }
 
-/* ---- frame log ---- */
+/* ---- frame log ----
+   Lines are buffered and flushed to the DOM in 1 s batches: appending
+   (and reflowing) per frame is too heavy at full stream rate. */
+const LOG_FLUSH_MS = 1000;
+const LOG_MAX_LINES = 400;
+const logPending = [];
+
 function logLine(cls, dir, raw, decoded) {
-  const el = document.createElement('div');
-  el.className = 'fl';
   const now = new Date();
   const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
   let hx = hexs(raw.slice(0, 20));
   if (raw.length > 20) hx += ' …';
-  el.innerHTML = `<span class="t">${ts}</span> <span class="${cls}">${dir}</span> ` +
-                 `<span class="hex">${hx}</span> <span class="dec"></span>`;
-  el.querySelector('.dec').textContent = decoded;
+  logPending.push({ ts, cls, dir, hx, decoded });
+  /* anything beyond the log cap would be trimmed right after insert */
+  if (logPending.length > LOG_MAX_LINES) logPending.shift();
+}
+
+function logFlush() {
+  if (!logPending.length) return;
   const log = $('log');
   const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
-  log.appendChild(el);
-  while (log.childNodes.length > 400) log.removeChild(log.firstChild);
+  const frag = document.createDocumentFragment();
+  for (const l of logPending) {
+    const el = document.createElement('div');
+    el.className = 'fl';
+    el.innerHTML = `<span class="t">${l.ts}</span> <span class="${l.cls}">${l.dir}</span> ` +
+                   `<span class="hex">${l.hx}</span> <span class="dec"></span>`;
+    el.querySelector('.dec').textContent = l.decoded;
+    frag.appendChild(el);
+  }
+  logPending.length = 0;
+  log.appendChild(frag);
+  while (log.childNodes.length > LOG_MAX_LINES) log.removeChild(log.firstChild);
   if (stick) log.scrollTop = log.scrollHeight;
 }
+setInterval(logFlush, LOG_FLUSH_MS);
 function describeFrame(type, meta, v) {
   const name = meta?.name ?? ('TYPE 0x' + hex(type) + ' (unknown)');
   if (meta?.kind === 'u16arr' && Array.isArray(v)) return `${name}[${v.length}] = [${v.join(', ')}]`;
@@ -1211,7 +1230,7 @@ $('btnPause').onclick = () => {
   app.logPaused = !app.logPaused;
   $('btnPause').textContent = app.logPaused ? 'Resume' : 'Pause';
 };
-$('btnClear').onclick = () => { $('log').textContent = ''; };
+$('btnClear').onclick = () => { $('log').textContent = ''; logPending.length = 0; };
 
 if (!('serial' in navigator)) {
   $('selTransport').value = 'sim';
