@@ -470,6 +470,11 @@ void servo_service_init(void)
     servo_staging_reset();
     test_active = false;
     test_status = WP_SRV_STATUS_IDLE;
+
+    /* MCC does not expose SCCP6 output polarity. The board-level servo
+       signal is inverted, so flip OC6A after generated initialization while
+       servo power is still off. This does not change the 1-2 ms pulse width. */
+    CCP6CON3Hbits.POLACE = 1u;
     servo_pwm_set_percent(SERVO_PWM_MID_PERCENT);
     SRV_ON_SetLow();
 

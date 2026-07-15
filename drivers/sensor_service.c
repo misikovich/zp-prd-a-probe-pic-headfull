@@ -12,6 +12,7 @@
 #define SENSOR_REPORT_MS       1000u
 #define ADC_READY_SPIN_LIMIT   100000UL
 #define ADC_CONVERT_SPIN_LIMIT 10000UL
+#define ADC_SHARED_SAMPLE_TAD  250u
 
 /* Physical pin/channel mapping for dsPIC33CK256MP506 SG48 board wiring. */
 #define ADC_CHANNEL_GRID_NGND 2u  /* V_NG, RB7/AN2 */
@@ -55,7 +56,7 @@ static u16 adc_result_read(u8 channel)
     }
 }
 
-static bool adc_read_raw_unlocked(u8 channel, u16 *result)
+static bool adc_convert_raw_unlocked(u8 channel, u16 *result)
 {
     u32 spins;
 
@@ -78,6 +79,19 @@ static bool adc_read_raw_unlocked(u8 channel, u16 *result)
 
     *result = adc_result_read(channel);
     return true;
+}
+
+static bool adc_read_raw_unlocked(u8 channel, u16 *result)
+{
+    u16 settling_sample;
+
+    /* The shared ADC core is multiplexed between unrelated analog sources.
+       Discard the first conversion after selecting a channel so residue from
+       the previous source cannot become the reported absolute reading. */
+    if (!adc_convert_raw_unlocked(channel, &settling_sample)) {
+        return false;
+    }
+    return adc_convert_raw_unlocked(channel, result);
 }
 
 static u8 collect_adc(u8 *value, u8 channel)
@@ -163,11 +177,12 @@ static bool adc_init(void)
     ADEIEL = 0u;
     ADEIEH = 0u;
 
-    /* FP=100 MHz, shared core=50 MHz, 12-bit unsigned integer results,
-       and 10 TADCORE sampling time. */
+    /* FP=100 MHz, shared core=50 MHz, 12-bit unsigned integer results.
+       Give potentiometers and other non-buffered sources 5.04 us to charge
+       the ADC sample capacitor: (SHRSAMC + 2) * 20 ns. */
     ADCON1Hbits.SHRRES = 3u;
     ADCON2Lbits.SHRADCS = 1u;
-    ADCON2Hbits.SHRSAMC = 8u;
+    ADCON2Hbits.SHRSAMC = ADC_SHARED_SAMPLE_TAD;
     ADCON5Hbits.WARMTIME = 15u;
 
     ADCON1Lbits.ADON = 1u;
