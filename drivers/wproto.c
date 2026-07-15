@@ -6,7 +6,7 @@
 
 #include "esp_uart.h"
 
-#define WPROTO_MAX_REPORTERS 32u
+#define WPROTO_MAX_REPORTERS 40u
 #define WPROTO_MAX_COMMAND_HANDLERS 8u
 #define WPROTO_TASK_STACK 320u /* 16-bit words; collect callbacks run here */
 #define WPROTO_TASK_PRIO 2u

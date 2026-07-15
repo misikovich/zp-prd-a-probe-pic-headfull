@@ -4,6 +4,7 @@
 #include <xc.h>
 
 #include "FreeRTOS.h"
+#include "semphr.h"
 
 #include "utils.h"
 #include "wproto.h"
@@ -17,9 +18,12 @@
 #define ADC_CHANNEL_GRID_L1L2 3u  /* V_L1L2, RA3/AN3 */
 #define ADC_CHANNEL_PWR_HWID  4u  /* PWR_HW_ID, RA4/AN4 */
 #define ADC_CHANNEL_TEMP_RCD  13u /* TEMP2, RC1/AN13 */
+#define ADC_CHANNEL_SRV_POS   15u /* SRV_POS, RC3/AN15 */
+#define ADC_CHANNEL_SRV_SENSE 17u /* SRV_SENSE, RC6/AN17 */
 #define ADC_CHANNEL_TEMP_TYPE2 18u /* TEMP1, RD10/AN18 */
 
 static bool adc_ready;
+static SemaphoreHandle_t adc_mutex;
 
 static bool adc_channel_ready(u8 channel)
 {
@@ -40,6 +44,10 @@ static u16 adc_result_read(u8 channel)
         return ADCBUF4;
     case ADC_CHANNEL_TEMP_RCD:
         return ADCBUF13;
+    case ADC_CHANNEL_SRV_POS:
+        return ADCBUF15;
+    case ADC_CHANNEL_SRV_SENSE:
+        return ADCBUF17;
     case ADC_CHANNEL_TEMP_TYPE2:
         return ADCBUF18;
     default:
@@ -47,7 +55,7 @@ static u16 adc_result_read(u8 channel)
     }
 }
 
-static bool adc_read_raw(u8 channel, u16 *result)
+static bool adc_read_raw_unlocked(u8 channel, u16 *result)
 {
     u32 spins;
 
@@ -76,9 +84,15 @@ static u8 collect_adc(u8 *value, u8 channel)
 {
     u16 raw;
 
-    if (!adc_read_raw(channel, &raw)) {
+    if ((adc_mutex == NULL) ||
+            (xSemaphoreTake(adc_mutex, portMAX_DELAY) != pdTRUE)) {
         return 0u;
     }
+    if (!adc_read_raw_unlocked(channel, &raw)) {
+        (void)xSemaphoreGive(adc_mutex);
+        return 0u;
+    }
+    (void)xSemaphoreGive(adc_mutex);
     value[0] = (u8)(raw & 0xFFu);
     value[1] = (u8)(raw >> 8u);
     return 2u;
@@ -96,6 +110,20 @@ DEFINE_ADC_COLLECTOR(collect_pwr_hwid, ADC_CHANNEL_PWR_HWID)
 DEFINE_ADC_COLLECTOR(collect_grid_ngnd, ADC_CHANNEL_GRID_NGND)
 DEFINE_ADC_COLLECTOR(collect_grid_l1l2, ADC_CHANNEL_GRID_L1L2)
 
+bool sensor_service_read_servo(u16 *position, u16 *sense)
+{
+    bool ok;
+
+    if ((position == NULL) || (sense == NULL) || (adc_mutex == NULL) ||
+            (xSemaphoreTake(adc_mutex, portMAX_DELAY) != pdTRUE)) {
+        return false;
+    }
+    ok = adc_read_raw_unlocked(ADC_CHANNEL_SRV_POS, position) &&
+            adc_read_raw_unlocked(ADC_CHANNEL_SRV_SENSE, sense);
+    (void)xSemaphoreGive(adc_mutex);
+    return ok;
+}
+
 static bool adc_init(void)
 {
     u32 spins;
@@ -109,6 +137,10 @@ static bool adc_init(void)
     _ANSELA4 = 1u;
     _TRISC1 = 1u;
     _ANSELC1 = 1u;
+    _TRISC3 = 1u;
+    _ANSELC3 = 1u;
+    _TRISC6 = 1u;
+    _ANSELC6 = 1u;
     _TRISD10 = 1u;
     _ANSELD10 = 1u;
 
@@ -158,6 +190,8 @@ static bool adc_init(void)
 
 void sensor_service_init(void)
 {
+    adc_mutex = xSemaphoreCreateMutex();
+    configASSERT(adc_mutex != NULL);
     adc_ready = adc_init();
     if (!adc_ready) {
         dlog("sensors: ADC init failed");

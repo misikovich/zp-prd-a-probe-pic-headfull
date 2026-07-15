@@ -129,6 +129,16 @@
 #define WP_RCD_STATUS_SENSOR_ERROR     7u
 #define WP_RCD_STATUS_SEQUENCE_FAILED  8u
 
+/* WP_TYPE_SRV_STATUS payload values. */
+#define WP_SRV_STATUS_IDLE             0u
+#define WP_SRV_STATUS_SEEK_MIN         1u
+#define WP_SRV_STATUS_SEEK_MAX         2u
+#define WP_SRV_STATUS_RETURN_MIN       3u
+#define WP_SRV_STATUS_PASS             4u
+#define WP_SRV_STATUS_ENDPOINT_TIMEOUT 5u
+#define WP_SRV_STATUS_RETURN_FAILED    6u
+#define WP_SRV_STATUS_ADC_FAILED       7u
+
 typedef enum {
   WP_TYPE_INVALID      = 0x00, /* reserved, never transmitted */
 
@@ -159,10 +169,11 @@ typedef enum {
   WP_TYPE_EM_ALARM          = 0x1E, /* uint8, alarm pin level, active low (0 = asserted) */
 
   /* Motor/Servo - Activateable */
-  WP_ACT_SRV_TEST           = 0x20, /* uint8, 0-1 bool */
-  WP_TYPE_SRV_POS_ADC       = 0x21, /* uint16[buffer_log_size], array */
-  WP_TYPE_SRV_CURR_ADC      = 0x22, /* uint16[buffer_log_size], array */
-  WP_TYPE_SRV_STATE         = 0x23, /* uint8, states: FF - stop, 01 - locking, 02 - unlocking */
+  WP_ACT_SRV_TEST           = 0x20, /* uint8: command 1 starts one test when
+                                       idle; 0 and duplicate 1 are ignored */
+  WP_TYPE_SRV_POS_ADC       = 0x21, /* uint16[buffer_log_size], RC3/AN15 */
+  WP_TYPE_SRV_SENSE_ADC     = 0x22, /* uint16[buffer_log_size], RC6/AN17 */
+  WP_TYPE_SRV_STATUS        = 0x23, /* uint8: WP_SRV_STATUS_* */
 
   /* Grid Detect Voltages*/
   WP_TYPE_GRID_NGND_ADC     = 0x31, /* uint16, 0-65535 */

@@ -12,6 +12,7 @@
 #include "rcd_service.h"
 #include "rgbw.h"
 #include "sensor_service.h"
+#include "servo_service.h"
 #include "wproto.h"
 /*
     Main application
@@ -130,6 +131,7 @@ int main(void)
     rgbw_init();
     wproto_init();
     sensor_service_init();
+    servo_service_init();
     fpga_service_init();
     emeter_service_init();
     rcd_service_init();
