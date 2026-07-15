@@ -174,6 +174,8 @@ typedef enum {
   WP_TYPE_SRV_POS_ADC       = 0x21, /* uint16[buffer_log_size], RC3/AN15 */
   WP_TYPE_SRV_SENSE_ADC     = 0x22, /* uint16[buffer_log_size], RC6/AN17 */
   WP_TYPE_SRV_STATUS        = 0x23, /* uint8: WP_SRV_STATUS_* */
+  WP_ACT_SRV_POSITION       = 0x24, /* uint8: 0 min/unlocked, 1 max/locked;
+                                       ignored while self-test is active */
 
   /* Grid Detect Voltages*/
   WP_TYPE_GRID_NGND_ADC     = 0x31, /* uint16, 0-65535 */

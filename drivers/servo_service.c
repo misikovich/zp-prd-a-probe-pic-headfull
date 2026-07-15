@@ -167,6 +167,29 @@ static void handle_servo_test(u8 type, const u8 *value, u8 len)
     }
 }
 
+static void handle_servo_position(u8 type, const u8 *value, u8 len)
+{
+    bool idle;
+
+    unused(type);
+    if ((len != 1u) || (value[0] > 1u)) {
+        return;
+    }
+
+    taskENTER_CRITICAL();
+    idle = !test_active;
+    taskEXIT_CRITICAL();
+    if (!idle) {
+        dlog("servo: manual position ignored - active");
+        return;
+    }
+
+    /* Establish the pulse before applying power on the first manual move. */
+    servo_pwm_set_percent(value[0] ? 100u : 0u);
+    SRV_ON_SetHigh();
+    dlog(value[0] ? "servo: manual locked" : "servo: manual unlocked");
+}
+
 static u8 collect_servo_act(u8 *value)
 {
     bool active;
@@ -456,6 +479,8 @@ void servo_service_init(void)
 
     configASSERT(wproto_add_command_handler(WP_ACT_SRV_TEST,
             handle_servo_test));
+    configASSERT(wproto_add_command_handler(WP_ACT_SRV_POSITION,
+            handle_servo_position));
     configASSERT(wproto_add_reporter(WP_ACT_SRV_TEST, SERVO_REPORT_MS,
             collect_servo_act));
     configASSERT(wproto_add_reporter(WP_TYPE_SRV_STATUS, SERVO_REPORT_MS,

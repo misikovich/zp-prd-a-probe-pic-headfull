@@ -58,6 +58,8 @@
   button:hover { border-color: var(--accent); }
   button.primary { background: #17384d; border-color: #2c5a77; }
   button:disabled { opacity: .45; cursor: default; }
+  .manual-controls { display: flex; gap: 8px; margin: 8px 0 12px; }
+  .manual-controls button { flex: 1; }
 
   .chip {
     display: inline-block; padding: 2px 9px; border-radius: 999px;
@@ -219,6 +221,7 @@ const TY = {
   EM_IMAX: 0x16, EM_FWVER: 0x17, EM_DRDY: 0x18, EM_FHZ: 0x19, EM_WARN: 0x1A,
   EM_ERR: 0x1B, EM_TEMP: 0x1C, EM_INTERRUPT: 0x1D, EM_ALARM: 0x1E,
   ACT_SRV_TEST: 0x20, SRV_POS_ADC: 0x21, SRV_SENSE_ADC: 0x22, SRV_STATUS: 0x23,
+  ACT_SRV_POSITION: 0x24,
   GRID_NGND_ADC: 0x31, GRID_L1L2_ADC: 0x32,
   ACT_RCD_TEST: 0x40, RCD_ERR: 0x41, RCD_F6MA: 0x42, RCD_F30MA: 0x43, RCD_STATUS: 0x44,
   ACT_FPGA_TEST: 0x50, FPGA_CDONE: 0x51, FPGA_INT: 0x52, FPGA_STATUS: 0x53,
@@ -275,6 +278,8 @@ const TYPES = {
                               2: ['SEEK MAX', 'warn'], 3: ['RETURN MIN', 'warn'],
                               4: ['PASS', 'ok'], 5: ['ENDPOINT TIMEOUT', 'err'],
                               6: ['RETURN FAILED', 'err'], 7: ['ADC FAILED', 'err'] } },
+  [TY.ACT_SRV_POSITION]: { name: 'ACT_SRV_POSITION', lbl: 'Manual position', kind: 'enum',
+                           map: { 0: ['MIN / UNLOCKED', ''], 1: ['MAX / LOCKED', ''] }, ctl: true },
 
   /* staged resistors from the grid into op-amps; ADC = grid_V * gain + 1.65 */
   [TY.GRID_NGND_ADC]: { name: 'GRID_NGND_ADC', lbl: 'N–GND',  kind: 'gridv', gain: 0.00368 },
@@ -312,7 +317,7 @@ const GROUPS = [
     types: [TY.RCD_STATUS, TY.RCD_ERR, TY.RCD_F6MA, TY.RCD_F30MA] },
   { title: 'FPGA — iCE5LP1K-SG48', act: TY.ACT_FPGA_TEST,
     types: [TY.FPGA_STATUS, TY.FPGA_CDONE, TY.FPGA_INT] },
-  { title: 'Servo', act: TY.ACT_SRV_TEST,
+  { title: 'Servo', act: TY.ACT_SRV_TEST, servoManual: true,
     types: [TY.SRV_STATUS], charts: [TY.SRV_POS_ADC, TY.SRV_SENSE_ADC] },
   { title: 'EMeter — MAX78615+PPM/C01', wide: true,
     types: [TY.EM_LINK, TY.EM_FWVER, TY.EM_DRDY, TY.EM_FHZ, TY.EM_WARN, TY.EM_ERR,
@@ -510,6 +515,12 @@ class SimTransport extends Transport {
   }
   _onClientFrame(f) {
     if ((f.hdr & 0x0F) !== WP.SRC_CLIENT) return;
+    if (f.type === TY.ACT_SRV_POSITION) {
+      if (f.value.length !== 1 || f.value[0] > 1 ||
+          this.servoQueued || this.act[TY.ACT_SRV_TEST]) return;
+      this.servoIdlePosition = f.value[0] ? 3650 : 450;
+      return;
+    }
     if (f.type === TY.ACT_SRV_TEST) {
       if (f.value.length !== 1 || f.value[0] !== 1 ||
           this.servoQueued || this.act[TY.ACT_SRV_TEST]) return;
@@ -709,6 +720,7 @@ const app = {
   reconnectVerifying: false,
   verifyStartedAt: 0,
   acts: {},                      // type -> {desired, timer, tries, btn, stateEl}
+  servoManualButtons: [],
   logPaused: false,
 };
 
@@ -847,6 +859,18 @@ function buildCards() {
       app.rows[grp.act] = { meta };                // value tracked, rendered via the header chip
     }
 
+    if (grp.servoManual) {
+      const controls = document.createElement('div'); controls.className = 'manual-controls';
+      const unlock = document.createElement('button'); unlock.textContent = 'Unlock (min)';
+      const lock = document.createElement('button'); lock.textContent = 'Lock (max)';
+      unlock.disabled = lock.disabled = true;
+      unlock.onclick = () => sendServoPosition(0);
+      lock.onclick = () => sendServoPosition(1);
+      controls.append(unlock, lock);
+      card.appendChild(controls);
+      app.servoManualButtons = [unlock, lock];
+    }
+
     for (const t of grp.types) {
       const meta = TYPES[t];
       const row = document.createElement('div'); row.className = 'row';
@@ -965,6 +989,7 @@ function onFrame(f) {
     if (a?.timer && v === a.desired) stopAct(f.type);
     renderAct(f.type);
   }
+  if (f.type === TY.ACT_SRV_TEST) renderServoManual();
   refreshStats();
 }
 
@@ -991,14 +1016,26 @@ function actToggle(type) {
     sendAct(type, a.desired);
   }, 200);
   renderAct(type);
+  if (type === TY.ACT_SRV_TEST) renderServoManual();
 }
 function stopAct(type) {
   const a = app.acts[type];
   if (a?.timer) { clearInterval(a.timer); a.timer = null; }
   if (a) a.desired = null;
+  if (type === TY.ACT_SRV_TEST) renderServoManual();
 }
 function sendAct(type, val) {
   txFrame(type, [val]);
+}
+function sendServoPosition(position) {
+  if ((app.latest[TY.ACT_SRV_TEST]?.v ?? 0) || !app.transport?.connected) return;
+  txFrame(TY.ACT_SRV_POSITION, [position]);
+}
+function renderServoManual() {
+  const disabled = !app.transport?.connected ||
+      !!(app.latest[TY.ACT_SRV_TEST]?.v ?? 0) ||
+      !!app.acts[TY.ACT_SRV_TEST]?.timer;
+  for (const btn of app.servoManualButtons) btn.disabled = disabled;
 }
 function renderAct(type) {
   const a = app.acts[type];
@@ -1084,6 +1121,7 @@ function transportConnected(tr, automatic = false, openStartedAt = 0) {
     app.acts[type].btn.disabled = false;
     renderAct(Number(type));
   }
+  renderServoManual();
   if (automatic) {
     app.reconnectPhase = 'verifying';
     app.reconnectVerifying = true;
@@ -1232,6 +1270,7 @@ async function teardown(reason) {
   $('btnConnect').textContent = 'Connect';
   $('selTransport').disabled = $('inpBaud').disabled = false;
   for (const a of Object.values(app.acts)) { a.btn.disabled = true; }
+  renderServoManual();
   setLinkChip(reason, reason === 'DISCONNECTED' ? '' : 'err');
 }
 function setLinkChip(txt, cls) {
