@@ -220,8 +220,8 @@ const TY = {
   EM_LINK: 0x10, EM_VA: 0x11, EM_VB: 0x12, EM_VC: 0x13, EM_IA: 0x14, EM_IB: 0x15,
   EM_IMAX: 0x16, EM_FWVER: 0x17, EM_DRDY: 0x18, EM_FHZ: 0x19, EM_WARN: 0x1A,
   EM_ERR: 0x1B, EM_TEMP: 0x1C, EM_INTERRUPT: 0x1D, EM_ALARM: 0x1E,
-  ACT_SRV_TEST: 0x20, SRV_POS_ADC: 0x21, SRV_SENSE_ADC: 0x22, SRV_STATUS: 0x23,
-  ACT_SRV_POSITION: 0x24,
+  SRV_POS_ADC: 0x21, SRV_SENSE_ADC: 0x22,
+  ACT_SRV_POSITION: 0x24, SRV_POWER: 0x25,
   GRID_NGND_ADC: 0x31, GRID_L1L2_ADC: 0x32,
   ACT_RCD_TEST: 0x40, RCD_ERR: 0x41, RCD_F6MA: 0x42, RCD_F30MA: 0x43, RCD_STATUS: 0x44,
   ACT_FPGA_TEST: 0x50, FPGA_CDONE: 0x51, FPGA_INT: 0x52, FPGA_STATUS: 0x53,
@@ -267,19 +267,14 @@ const TYPES = {
   [TY.EM_ALARM]:     { name: 'EM_ALARM',     lbl: 'Alarm',     kind: 'enum',
                        map: { 0x00: ['ALARM', 'err'], 0x01: ['—', ''] }, alert: v => v === 0 },
 
-  [TY.ACT_SRV_TEST]: { name: 'ACT_SRV_TEST', lbl: 'Servo test', kind: 'bool', act: true,
-                       oneShot: true, activeLbl: 'TESTING', activeBtn: 'Testing…' },
   [TY.SRV_POS_ADC]:  { name: 'SRV_POS_ADC', lbl: 'Position', kind: 'u16arr',
                        color: 'var(--chart-v)', minspan: 128 },
   [TY.SRV_SENSE_ADC]: { name: 'SRV_SENSE_ADC', lbl: 'Sense', kind: 'u16arr',
                         color: 'var(--chart-i)', minspan: 128 },
-  [TY.SRV_STATUS]:   { name: 'SRV_STATUS', lbl: 'Self-test', kind: 'enum',
-                       map: { 0: ['IDLE', ''], 1: ['SEEK MIN', 'warn'],
-                              2: ['SEEK MAX', 'warn'], 3: ['RETURN MIN', 'warn'],
-                              4: ['PASS', 'ok'], 5: ['ENDPOINT TIMEOUT', 'err'],
-                              6: ['RETURN FAILED', 'err'], 7: ['ADC FAILED', 'err'] } },
   [TY.ACT_SRV_POSITION]: { name: 'ACT_SRV_POSITION', lbl: 'Manual position', kind: 'enum',
                            map: { 0: ['MIN / UNLOCKED', ''], 1: ['MAX / LOCKED', ''] }, ctl: true },
+  [TY.SRV_POWER]: { name: 'SRV_POWER', lbl: 'Relay power', kind: 'bool',
+                    onLbl: 'ON', offLbl: 'OFF', onCls: 'ok' },
 
   /* staged resistors from the grid into op-amps; ADC = grid_V * gain + 1.65 */
   [TY.GRID_NGND_ADC]: { name: 'GRID_NGND_ADC', lbl: 'N–GND',  kind: 'gridv', gain: 0.00368 },
@@ -317,8 +312,8 @@ const GROUPS = [
     types: [TY.RCD_STATUS, TY.RCD_ERR, TY.RCD_F6MA, TY.RCD_F30MA] },
   { title: 'FPGA — iCE5LP1K-SG48', act: TY.ACT_FPGA_TEST,
     types: [TY.FPGA_STATUS, TY.FPGA_CDONE, TY.FPGA_INT] },
-  { title: 'Servo', act: TY.ACT_SRV_TEST, servoManual: true,
-    types: [TY.SRV_STATUS], charts: [TY.SRV_POS_ADC, TY.SRV_SENSE_ADC] },
+  { title: 'Servo', servoManual: true, types: [TY.SRV_POWER],
+    charts: [TY.SRV_POS_ADC, TY.SRV_SENSE_ADC] },
   { title: 'EMeter — MAX78615+PPM/C01', wide: true,
     types: [TY.EM_LINK, TY.EM_FWVER, TY.EM_DRDY, TY.EM_FHZ, TY.EM_WARN, TY.EM_ERR,
             TY.EM_TEMP, TY.EM_INTERRUPT, TY.EM_ALARM],
@@ -465,15 +460,15 @@ class WebSerialTransport extends Transport {
   }
 }
 
-/* Fake probe: emits plausible frames through the real parser and
- * honours ACT convergence (applies a client ACT value after a delay,
- * auto-clears it when the simulated test finishes).                  */
+/* Fake probe: emits plausible frames through the real parser and honours
+ * ACT convergence. Servo positioning uses the same two-second power pulse
+ * as the firmware.                                                     */
 class SimTransport extends Transport {
   constructor() {
     super();
     this.timers = [];
     this.t = 0;                                    // waveform phase
-    this.act = { [TY.ACT_SRV_TEST]: 0, [TY.ACT_RCD_TEST]: 0, [TY.ACT_FPGA_TEST]: 0 };
+    this.act = { [TY.ACT_RCD_TEST]: 0, [TY.ACT_FPGA_TEST]: 0 };
     this.actSince = {};
     this.fpgaQueued = false;
     this.fpgaStatus = 0;
@@ -483,9 +478,7 @@ class SimTransport extends Transport {
     this.rcdErr = 0;
     this.rcdF6 = 0;
     this.rcdF30 = 0;
-    this.servoQueued = false;
-    this.servoStatus = 0;
-    this.servoStarted = null;
+    this.servoPower = 0;
     this.servoIdlePosition = 2048;
     this.servoSamples = [];
     this.servoLastSample = Date.now();
@@ -516,22 +509,12 @@ class SimTransport extends Transport {
   _onClientFrame(f) {
     if ((f.hdr & 0x0F) !== WP.SRC_CLIENT) return;
     if (f.type === TY.ACT_SRV_POSITION) {
-      if (f.value.length !== 1 || f.value[0] > 1 ||
-          this.servoQueued || this.act[TY.ACT_SRV_TEST]) return;
+      if (f.value.length !== 1 || f.value[0] > 1) return;
       this.servoIdlePosition = f.value[0] ? 3650 : 450;
-      return;
-    }
-    if (f.type === TY.ACT_SRV_TEST) {
-      if (f.value.length !== 1 || f.value[0] !== 1 ||
-          this.servoQueued || this.act[TY.ACT_SRV_TEST]) return;
-      this.servoQueued = true;                      // duplicate 1 is ignored
-      this.timers.push(setTimeout(() => {
-        this.act[TY.ACT_SRV_TEST] = 1;
-        this.servoStatus = 1;                       // SEEK MIN
-        this.servoStarted = Date.now();
-        this.servoSamples = [];
-        this.servoLastSample = this.servoStarted;
-      }, 350));
+      if (!this.servoPower) {
+        this.servoPower = 1;
+        this.timers.push(setTimeout(() => { this.servoPower = 0; }, 2000));
+      }
       return;
     }
     if (f.type === TY.ACT_RCD_TEST) {
@@ -619,53 +602,19 @@ class SimTransport extends Transport {
     this._emit(TY.EM_IB, this._arr(t => s(t, 2.4, 3600, 32768)));
     this._emit(TY.EM_IMAX, this._arr(t => 36900 + 300 * Math.sin(t * 0.7)));
   }
-  _servoValues(now) {
+  _servoValues() {
     const noise = a => (Math.random() - 0.5) * a;
-    if (!this.act[TY.ACT_SRV_TEST] || this.servoStarted === null) {
-      return { position: this.servoIdlePosition + noise(18), sense: 620 + noise(18) };
-    }
-
-    const elapsed = (now - this.servoStarted) / 1000;
-    let position;
-    if (elapsed < 1) {
-      position = 2048;
-    } else if (elapsed < 3) {
-      position = 2048 - ((elapsed - 1) / 2) * (2048 - 450);
-    } else if (elapsed < 5) {
-      position = 450 + ((elapsed - 3) / 2) * (3650 - 450);
-    } else {
-      position = 3650 - Math.min(1, (elapsed - 5) / 0.6) * (3650 - 450);
-    }
-    const atEndpoint = (elapsed >= 2.7 && elapsed <= 3.05) ||
-                       (elapsed >= 4.7 && elapsed <= 5.05);
-    return { position: position + noise(18), sense: (atEndpoint ? 1050 : 620) + noise(20) };
-  }
-  _servoUpdate(now) {
-    if (!this.act[TY.ACT_SRV_TEST] || this.servoStarted === null) return;
-    const elapsed = (now - this.servoStarted) / 1000;
-    if (elapsed < 3) this.servoStatus = 1;            // SEEK MIN
-    else if (elapsed < 5) this.servoStatus = 2;       // SEEK MAX
-    else if (elapsed < 5.6) this.servoStatus = 3;     // RETURN MIN
-    else {
-      this.servoStatus = 4;                           // PASS remains visible
-      this.act[TY.ACT_SRV_TEST] = 0;
-      this.servoStarted = null;
-      this.servoIdlePosition = 450;
-      this.servoSamples = [];                         // begin a clean idle batch
-      this.servoLastSample = now;
-      this.servoQueued = false;
-    }
+    return { position: this.servoIdlePosition + noise(18),
+             sense: (this.servoPower ? 1050 : 20) + noise(18) };
   }
   _servoTelemetry() {
     const now = Date.now();
-    this._servoUpdate(now);
-    this._emit(TY.ACT_SRV_TEST, [this.act[TY.ACT_SRV_TEST]]);
-    this._emit(TY.SRV_STATUS, [this.servoStatus]);
+    this._emit(TY.SRV_POWER, [this.servoPower]);
 
-    const interval = this.act[TY.ACT_SRV_TEST] ? 100 : 200;
+    const interval = 200;
     if (now - this.servoLastSample < interval) return;
     this.servoLastSample += interval;
-    this.servoSamples.push(this._servoValues(this.servoLastSample));
+    this.servoSamples.push(this._servoValues());
     if (this.servoSamples.length < WP.BUFFER_LOG_SIZE) return;
 
     const position = [], sense = [];
@@ -989,7 +938,6 @@ function onFrame(f) {
     if (a?.timer && v === a.desired) stopAct(f.type);
     renderAct(f.type);
   }
-  if (f.type === TY.ACT_SRV_TEST) renderServoManual();
   refreshStats();
 }
 
@@ -1016,25 +964,21 @@ function actToggle(type) {
     sendAct(type, a.desired);
   }, 200);
   renderAct(type);
-  if (type === TY.ACT_SRV_TEST) renderServoManual();
 }
 function stopAct(type) {
   const a = app.acts[type];
   if (a?.timer) { clearInterval(a.timer); a.timer = null; }
   if (a) a.desired = null;
-  if (type === TY.ACT_SRV_TEST) renderServoManual();
 }
 function sendAct(type, val) {
   txFrame(type, [val]);
 }
 function sendServoPosition(position) {
-  if ((app.latest[TY.ACT_SRV_TEST]?.v ?? 0) || !app.transport?.connected) return;
+  if (!app.transport?.connected) return;
   txFrame(TY.ACT_SRV_POSITION, [position]);
 }
 function renderServoManual() {
-  const disabled = !app.transport?.connected ||
-      !!(app.latest[TY.ACT_SRV_TEST]?.v ?? 0) ||
-      !!app.acts[TY.ACT_SRV_TEST]?.timer;
+  const disabled = !app.transport?.connected;
   for (const btn of app.servoManualButtons) btn.disabled = disabled;
 }
 function renderAct(type) {

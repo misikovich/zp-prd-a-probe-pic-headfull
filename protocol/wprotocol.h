@@ -68,6 +68,8 @@
     command 1 queues one upload, command 0 is ignored, and duplicate 1
     commands are ignored while an upload is queued or loading. Its
     reported state is 1 while queued/loading and auto-clears to 0.
+    WP_ACT_SRV_POSITION is a fire-and-forget manual command rather than a
+    converging state; WP_TYPE_SRV_POWER reports its two-second power pulse.
 
     WP_TYPE_ACK is reserved for future frames that have no observable
     state to converge on (e.g. one-shot config): the receiver echoes
@@ -129,16 +131,6 @@
 #define WP_RCD_STATUS_SENSOR_ERROR     7u
 #define WP_RCD_STATUS_SEQUENCE_FAILED  8u
 
-/* WP_TYPE_SRV_STATUS payload values. */
-#define WP_SRV_STATUS_IDLE             0u
-#define WP_SRV_STATUS_SEEK_MIN         1u
-#define WP_SRV_STATUS_SEEK_MAX         2u
-#define WP_SRV_STATUS_RETURN_MIN       3u
-#define WP_SRV_STATUS_PASS             4u
-#define WP_SRV_STATUS_ENDPOINT_TIMEOUT 5u
-#define WP_SRV_STATUS_RETURN_FAILED    6u
-#define WP_SRV_STATUS_ADC_FAILED       7u
-
 typedef enum {
   WP_TYPE_INVALID      = 0x00, /* reserved, never transmitted */
 
@@ -168,14 +160,13 @@ typedef enum {
   WP_TYPE_EM_INTERRUPT      = 0x1D, /* uint8, IRQ pin level, active low (0 = asserted) */
   WP_TYPE_EM_ALARM          = 0x1E, /* uint8, alarm pin level, active low (0 = asserted) */
 
-  /* Motor/Servo - Activateable */
-  WP_ACT_SRV_TEST           = 0x20, /* uint8: command 1 starts one test when
-                                       idle; 0 and duplicate 1 are ignored */
+  /* Motor/Servo - manual positioning only; 0x20 and 0x23 are retired. */
   WP_TYPE_SRV_POS_ADC       = 0x21, /* uint16[buffer_log_size], RC3/AN15 */
   WP_TYPE_SRV_SENSE_ADC     = 0x22, /* uint16[buffer_log_size], RC6/AN17 */
-  WP_TYPE_SRV_STATUS        = 0x23, /* uint8: WP_SRV_STATUS_* */
   WP_ACT_SRV_POSITION       = 0x24, /* uint8: 0 min/unlocked, 1 max/locked;
-                                       ignored while self-test is active */
+                                       relay power auto-clears within 2 s */
+  WP_TYPE_SRV_POWER         = 0x25, /* uint8: logical relay power state;
+                                       read-only, 0 off, 1 on */
 
   /* Grid Detect Voltages*/
   WP_TYPE_GRID_NGND_ADC     = 0x31, /* uint16, 0-65535 */
